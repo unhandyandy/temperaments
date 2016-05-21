@@ -1,9 +1,9 @@
 (ns temperaments.core
   (:use seesaw.core
         seesaw.graphics
-        seesaw.color
-        seesaw.keystroke
-        seesaw.chooser
+        ;seesaw.color
+        ;seesaw.keystroke
+        ;seesaw.chooser
         clojure.math.numeric-tower)
   (:require [overtone.core :as o]
             [clojure.string :as s])
