@@ -3,7 +3,7 @@
         seesaw.graphics
         ;seesaw.color
         ;seesaw.keystroke
-        ;seesaw.chooser
+        seesaw.chooser
         clojure.math.numeric-tower)
   (:require [overtone.core :as o]
             [clojure.string :as s])
@@ -207,8 +207,6 @@
         oct2 (map #(s/join [% "4"]) c-scale)]
     (concat oct1 oct2)))
 
-(def test-model '("A" "B" "C" "D\u266D"))
-                                    
 (defn make-note-box [id]
   (let [cb (combobox :id (keyword (s/join ["kb-" id]))
                      :model keyboard)]
@@ -260,11 +258,10 @@
          (range rhy-hours))))
 
   ;; adds keyboards to xyz-panel 
-(defn add-note-circles [id]
-  (let [root (get-in @melody-map [id :root])
-        mel-keys (make-note-circle-mel id)
+(defn add-note-circles [id panel]
+  (let [mel-keys (make-note-circle-mel id)
         rhy-keys (make-note-circle-rhy id)]
-    (config! root :items (concat mel-keys rhy-keys))))
+    (config! panel :items (concat mel-keys rhy-keys))))
 
 (defn make-style [c]
   (style :foreground c :background c))
@@ -303,9 +300,10 @@
         mel-prefix (s/join ["#kb-" id "-mel-"])
         mel-len (get-in @melody-map [id :pitches])
         root (get-in @melody-map [id :root])
-        mel-pattern (map #(value (select root [(keyword (s/join [mel-prefix %]))]))
+        panel (select root [:#kb])
+        mel-pattern (map #(value (select panel [(keyword (s/join [mel-prefix %]))]))
                          (range mel-len))
-        rhy-seq (map #(value (select root [(keyword (s/join [rhy-prefix %]))]))
+        rhy-seq (map #(value (select panel [(keyword (s/join [rhy-prefix %]))]))
                      (range (get-in @melody-map [id :beats])))
         rhy-pattern (str-pattern->rhythm rhy-seq)
         rhy-len (count (filter #(> % 0) rhy-pattern))
@@ -349,8 +347,8 @@
   (let [[mel rhy] (make-part id)
         notes (map str->midi mel)
         part (map vector notes rhy)]
-    (play one-twenty-bpm inst-cur part)))
-
+    (play one-twenty-bpm inst-cur part)))  
+    
 (defn remove-circle [id kw]
   (let [len (get-in @melody-map [id kw])
         kwstring (case kw
@@ -359,46 +357,51 @@
         idprefix (s/join ["#kb-" id kwstring])
         idlist (vec (map #(keyword (s/join [idprefix (str %)])) (range len)))
         root (get-in @melody-map [id :root])
+        panel (select root [:#kb])
         circhash (atom {})]
+    ;(println idlist)
     (doseq [k idlist]
-      (let [w (select root [k])]
-        ;(println w)
+      (let [w (select panel [k])]
         (swap! circhash assoc k (value w))
-        (remove! root w)))
+        (remove! panel w)))
     @circhash))
 
 (defn change-circle-mel [id newnum]
   (let [root (get-in @melody-map [id :root])
+        panel (select root [:#kb])
         rhyvals (remove-circle id :beats)
         len (get-in @melody-map [id :beats])
         idprefix (s/join ["#kb-" id "-rhy-"])
         kwlist (vec (map #(keyword (s/join [idprefix (str %)])) (range len)))]
     (remove-circle id :pitches)
     (swap! melody-map assoc-in [id :pitches] newnum)
-    (config! root :items (concat (make-note-circle-mel id) (make-note-circle-rhy id)))
+    (config! panel :items (concat (make-note-circle-mel id) (make-note-circle-rhy id)))
     (doseq [kw kwlist]
-      (value! (select root [kw]) (get rhyvals kw)))
+      (value! (select panel [kw]) (get rhyvals kw)))
     ))
         
 (defn change-circle-rhy [id newnum]
   (let [root (get-in @melody-map [id :root])
+        panel (select root [:#kb])
         melvals (remove-circle id :pitches)
         len (get-in @melody-map [id :pitches])
         idprefix (s/join ["#kb-" id "-mel-"])
         kwlist (vec (map #(keyword (s/join [idprefix (str %)])) (range len)))]
     (remove-circle id :beats)
     (swap! melody-map assoc-in [id :beats] newnum)
-    (config! root :items (concat (make-note-circle-mel id) (make-note-circle-rhy id)))
+    (config! panel :items (concat (make-note-circle-mel id) (make-note-circle-rhy id)))
     (doseq [kw kwlist]
-      (value! (select root [kw]) (get melvals kw)))
+      (value! (select panel [kw]) (get melvals kw)))
     ))
         
 (defn make-panel-controls [id]
   (let [cbp (combobox :model (range 1 10)
+                      :id (keyword (s/join ["kb-" (str id) "-numpitch"]))
                       :listen [:action
                                (fn [e]
                                  (change-circle-mel id (value (.getSource e))))])
         cbb (combobox :model (range 1 10)
+                      :id (keyword (s/join ["kb-" (str id) "-numbeats"]))
                       :listen [:action
                                (fn [e]
                                  (change-circle-rhy id (value (.getSource e))))])]
@@ -407,25 +410,91 @@
                               (label "# beats:") cbb])))
 
 (defn make-melody-panel [id]
-  (let [pan (xyz-panel :id id 
+  (let [pan (xyz-panel :id :kb
                        :size panel-size
                        :items []
                        )
         controls (make-panel-controls id)
         playsolo (button :text "Play Solo"
                          :listen [:action #(play-solo id %)])
-        verticalpanel (vertical-panel :items [pan playsolo controls])
         f (frame :title (s/join ["Tune " (str id)])
                  :id (s/join ["frame-" (str id)])
                  :listen [:window-closing
                           (fn [e]
                             (swap! melody-map dissoc id))])
+        verticalpanel (vertical-panel :items [pan playsolo controls])
         numcbs 1]
-    (swap! melody-map assoc id {:pitches numcbs, :beats numcbs, :root pan})
-    (add-note-circles id)
+    (swap! melody-map assoc id {:pitches numcbs, :beats numcbs, :root f})
+    (add-note-circles id pan)
     (config! f :content verticalpanel)
     (-> f pack! show!)
-    pan))  
+    f))
+
+(defn make-circles-hash [id]
+  (let [root (get-in @melody-map [id :root])
+        panel (select root [:#kb])
+        melprefix (s/join ["#kb-" id "-mel-"])
+        rhyprefix (s/join ["#kb-" id "-rhy-"])
+        mellen (get-in @melody-map [id :pitches])
+        rhylen (get-in @melody-map [id :beats])
+        mellist (map #(keyword (s/join [melprefix (str %)])) (range mellen))
+        rhylist (map #(keyword (s/join [rhyprefix (str %)])) (range rhylen))
+        idlist (vec (concat mellist rhylist))
+        circhash (atom {})]
+    (doseq [k idlist]
+      (let [w (select panel [k])]
+        (swap! circhash assoc k (value w))))
+    @circhash))
+
+(defn replace-in-key [key old new]
+  (let [oldkeystr (str key)
+        newkeystr (s/replace oldkeystr old new)]
+    (keyword (subs newkeystr 1))))
+        
+(defn restore-circles [id oldid panel circhash]
+  (let [oldstr (s/join ["-" (str oldid) "-"])
+        newstr (s/join ["-" (str id) "-"])]
+    (doseq [[k v] circhash]
+      (let [newk (replace-in-key k oldstr newstr)]
+        (value! (select panel [newk]) v)))))
+
+(defn restore-panel [oldid panhash circhash]
+  (let [newroot (new-panel nil)
+        id @counter
+        panel (select newroot [:#kb])
+        newpanhash (assoc panhash :root newroot)
+        numpitbut (select newroot [(keyword (s/join ["#kb-" (str id) "-numpitch"]))])
+        numbeabut (select newroot [(keyword (s/join ["#kb-" (str id) "-numbeats"]))])
+        ]
+    (value! numpitbut (get panhash :pitches))
+    (value! numbeabut (get panhash :beats))
+    (restore-circles id oldid panel circhash)
+    (swap! melody-map assoc id newpanhash)))
+
+(defn make-dump []
+  (let [dump (atom {})]
+    (doseq [[k v] @melody-map]
+      (let [val {:panhash (dissoc v :root),
+                 :circhash (make-circles-hash k)}]
+        (swap! dump assoc k val)))
+    @dump))
+        
+(defn restore-dump [dump]
+  (doseq [[oldid {:keys [panhash circhash]}] dump]
+    (restore-panel oldid panhash circhash)))
+
+(defn save-pattern [e]
+  (let [dump (make-dump)
+        savefile (choose-file :type :save)]
+    (if savefile
+      (spit savefile dump))))
+
+(defn load-pattern [e]
+  (let [loadfile (choose-file :type :open)]
+    (if loadfile
+      (let [dumpstr (slurp loadfile)
+            dump (clojure.edn/read-string dumpstr)]
+        (restore-dump dump)))))
 
 (def control-frame
   (frame :title "Tuning Demo"
@@ -442,6 +511,12 @@
                            (button :id :newPanel
                                    :text "New Panel"
                                    :listen [:action new-panel])
+                           (button :id :saveButt
+                                   :text "Save"
+                                   :listen [:action save-pattern])
+                           (button :id :loadButt
+                                   :text "Load"
+                                   :listen [:action load-pattern])
                            ;; spacer
                            (label :text ""
                                   :size [100 :by 30])
