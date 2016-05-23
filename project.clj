@@ -1,5 +1,5 @@
 (defproject temperaments "0.1.0-SNAPSHOT"
-  :description "Explore alternate tunings"
+  :description "Explore alternate tunings and necklace patterns"
   :jvm-opts ^:replace []
   :main ^{:skip-aot true} temperaments.core
   :url "mailto:dabrowsa@indiana.edu"
