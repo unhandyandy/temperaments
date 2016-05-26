@@ -140,17 +140,17 @@
    gate 1]
   (let [osc-bank-1 [(o/saw freq) (o/sin-osc freq) (o/pulse freq)]
         osc-bank-2 [(o/saw freq) (o/sin-osc freq) (o/pulse freq)]
-        amp-env    (o/env-gen (o/adsr attack decay sustain release) gate :action o/FREE)
+        amp-env    (o/env-gen (o/adsr attack decay sustain release)
+                              gate :action o/FREE)
         f-env      (o/env-gen (o/adsr fattack fdecay fsustain frelease) gate)
         s1         (* osc1-level (o/select osc1 osc-bank-1))
         s2         (* osc2-level (o/select osc2 osc-bank-2))
         filt       (o/moog-ff (+ s1 s2) (* cutoff f-env) 3)]
     (* amp filt)))
 
-(def inst-cur flute)
+(def instruments ["Flute" "Piano" "Mooger" "CS80" "SSaw" "Ticker" "Ping"])
 
-(defn play-test-tone [e]
-  (inst-cur 440))
+(def inst-cur flute)
 
 (defn kill-tones [e]
   (o/clear))
@@ -166,18 +166,28 @@
         rev (concat '([:a#4 1] [:g#4 1]) (drop 3 (reverse half)))]
     (concat half rev)))
 
+(defn str->instr [str]
+  (case str
+    "Flute"   flute,
+    "Piano"   piano,
+    "Mooger"  mooger,
+    "CS80"    cs80,
+    "SSaw"    ssaw,
+    "Ticker"  tick,
+    "Ping"    ping,
+    "Default" inst-cur))
 
 (defn inst-chooser [e]
-  (let [val (value (.getSource e))]
-    (case val
-      "Flute"  (def inst-cur flute)
-      "Piano"  (def inst-cur piano)
-      "Mooger" (def inst-cur mooger)
-      "CS80"   (def inst-cur cs80)
-      "SSaw"   (def inst-cur ssaw)
-      "Ticker" (def inst-cur tick)
-      "Ping"   (def inst-cur ping))))
+  (let [val (value (.getSource e))
+        instr (str->instr val)]
+    (def inst-cur instr)))
 
+(defn inst-chooser-part [id e]
+  (let [val (value (.getSource e))
+        oldmap (get @melody-map id)
+        newmap (assoc oldmap :instr val)]
+    (swap! melody-map assoc id newmap)))    
+  
 (defn tonic-chooser [e]
   (let [val (value (.getSource e))]
     (case val
@@ -257,14 +267,14 @@
       (concat (list newnote) (string-to-midi tail)))
     '()))
 
-(def melody (atom [(note-to-midi major)]))
+(def melody (atom [(cons "Default" (note-to-midi major))]))
 
 (defn melody-chooser [e]
   (let [val (value (.getSource e))]
     (case val
-      "Art of Fugue"  (reset! melody [(note-to-midi aof-subject)])
-      "Major Scale"   (reset! melody [(note-to-midi major)])
-      "Minor Scale"   (reset! melody [(note-to-midi minor)])
+      "Art of Fugue"  (reset! melody [(cons "Default" (note-to-midi aof-subject))])
+      "Major Scale"   (reset! melody [(cons "Default" (note-to-midi major))])
+      "Minor Scale"   (reset! melody [(cons "Default" (note-to-midi minor))])
       "Patterns"      (reset! melody false)
       )))
 
@@ -302,21 +312,6 @@
 (defn new-panel [e]
   (swap! counter inc)
   (make-melody-panel @counter))
-
-
-
-;(config! control-frame :on-close :exit)
-
-;; keyboard for canvas
-;; (defn keyboard [melid kbnum]
-;;   (let [oct1 (map #(s/join [% "3"]) c-scale)
-;;         oct2 (map #(s/join [% "4"]) c-scale)
-;;         notes (concat oct1 oct2)]
-;;     (map #(action :name %
-;;                   :handler (fn [e]
-;;                              (assoc (get (get melody-map melid) :pitches)
-;;                                     kbnum %)))
-;;          notes)))
 
 (def keyboard 
   (let [oct1 (map #(s/join [% "3"]) c-scale)
@@ -431,8 +426,9 @@
                     melodyseq
                     (concat [nil] melodyseq))
         rhythm (multiply-rhythm rhy-pattern rhy-repeats)
-        total-time (apply + rhythm)]
-    [fixmelody rhythm total-time]))
+        total-time (apply + rhythm)
+        instrstr (get-in @melody-map [id :instr])]
+    [fixmelody rhythm total-time instrstr]))
 
 
 (defn make-score []
@@ -444,10 +440,13 @@
         partrepeats (map #(/ totaltime %) times)
         score (atom '())]
     (doseq [i (range len)]
-      (let [rhythm (apply concat (repeat (nth partrepeats i) (second (nth parts i))))
-            melodyseq (apply concat (repeat (nth partrepeats i) (first (nth parts i))))
+      (let [thispart (nth parts i)
+            thisinstr (nth thispart 3)
+            thisrepeats (nth partrepeats i)
+            rhythm (apply concat (repeat thisrepeats (second thispart)))
+            melodyseq (apply concat (repeat thisrepeats (first thispart)))
             notes (map str->midi melodyseq)
-            part (map vector notes rhythm)]
+            part (cons thisinstr (map vector notes rhythm))]
         (swap! score conj part)))
     @score))
 
@@ -456,14 +455,14 @@
 (defn play-melody [e]
   (let [score (or @melody
                   (make-score))]
-    (doseq [part score]
-      (play one-twenty-bpm inst-cur part {:midi true}))))
-
+    (doseq [[instr & part] score]
+      (play one-twenty-bpm (str->instr instr) part {:midi true}))))
+  
 (defn play-solo [id e]
-  (let [[mel rhy] (make-part id)
+  (let [[mel rhy _ instr] (make-part id)
         notes (map str->midi mel)
         part (map vector notes rhy)]
-    (play one-twenty-bpm inst-cur part {:midi true})))  
+    (play one-twenty-bpm (str->instr instr) part {:midi true})))  
     
 (defn remove-circle [id kw]
   (let [len (get-in @melody-map [id kw])
@@ -533,14 +532,19 @@
         controls (make-panel-controls id)
         playsolo (button :text "Play Solo"
                          :listen [:action #(play-solo id %)])
+        chinstr (combobox :model (cons "Default" instruments)
+                          :text "Instrument:"
+                          :id (keyword (s/join ["kb-" (str id) "-instr"]))
+                          :listen [:action #(inst-chooser-part id %)])
         f (frame :title (s/join ["Tune " (str id)])
                  :id (s/join ["frame-" (str id)])
                  :listen [:window-closing
                           (fn [e]
                             (swap! melody-map dissoc id))])
-        verticalpanel (vertical-panel :items [pan playsolo controls])
+        verticalpanel (vertical-panel :items [pan chinstr playsolo controls])
         numcbs 1]
-    (swap! melody-map assoc id {:pitches numcbs, :beats numcbs, :root f})
+    (swap! melody-map assoc id {:pitches numcbs, :beats numcbs,
+                                :root f, :instr "Default"})
     (add-note-circles id pan)
     (config! f :content verticalpanel)
     (-> f pack! show!)
@@ -556,7 +560,7 @@
         mellist (map #(keyword (s/join [melprefix (str %)])) (range mellen))
         rhylist (map #(keyword (s/join [rhyprefix (str %)])) (range rhylen))
         idlist (vec (concat mellist rhylist))
-        circhash (atom {})]
+        circhash (atom '())]
     (doseq [k idlist]
       (let [w (select panel [k])]
         (swap! circhash assoc k (value w))))
@@ -581,9 +585,11 @@
         newpanhash (assoc panhash :root newroot)
         numpitbut (select newroot [(keyword (s/join ["#kb-" (str id) "-numpitch"]))])
         numbeabut (select newroot [(keyword (s/join ["#kb-" (str id) "-numbeats"]))])
+        instrubut (select newroot [(keyword (s/join ["#kb-" (str id) "-instr"]))])
         ]
     (value! numpitbut (get panhash :pitches))
     (value! numbeabut (get panhash :beats))
+    (value! instrubut (get panhash :instr))
     (restore-circles id oldid panel circhash)
     (swap! melody-map assoc id newpanhash)))
 
@@ -637,8 +643,7 @@
                            (label :text ""
                                   :size [100 :by 30])
                            (label "Instrument:")
-                           (combobox :model ["Flute" "Piano" "Mooger" "CS80"
-                                             "SSaw" "Ticker" "Ping"]
+                           (combobox :model instruments
                                      :id :instChooser
                                      :listen [:action inst-chooser])
                            (label "Tonic:")
@@ -651,7 +656,8 @@
                                      :id :tuningChooser
                                      :listen [:action tuning-chooser])
                            (label "Melody:")
-                           (combobox :model ["Major Scale" "Minor Scale" "Art of Fugue" "Patterns"]
+                           (combobox :model ["Major Scale" "Minor Scale"
+                                             "Art of Fugue" "Patterns"]
                                      :id :melodyChooser
                                      :listen [:action melody-chooser])
                            ])))
