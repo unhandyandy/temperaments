@@ -1,14 +1,14 @@
-# insane-noises
+# temperaments
 
-A Clojure library designed to ... well, that part is up to you.
+Written for the music unit in a freshman math class.
 
 ## Usage
 
-FIXME
+Hit "New Panel" to create a new melody.  This can be played by setting the "Melody" combobox to "Patterns".
 
 ## License
 
-Copyright © 2016 FIXME
+Copyright © 2016 
 
 Distributed under the Eclipse Public License either version 1.0 or (at
 your option) any later version.
