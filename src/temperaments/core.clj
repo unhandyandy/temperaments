@@ -15,10 +15,32 @@
 
 (def tuning (atom :equalTemperament))
 
+(def twelfth6 (sqrt 2))
+(def twelfth3 (sqrt twelfth6))
+(def twelfth1  (expt twelfth3 1/3))
+(def twelfth4 (expt 2 1/3))
+(def twelfth5 (* twelfth1 twelfth4))
+(def twelfth2 (* twelfth1 twelfth1))
+(def twelfth7 (* twelfth3 twelfth4))
+
 (def tuning-map
   (atom {:equalTemperament (map #(Math/pow 2 (/ % 12)) (range 0 12)),
          :pythagorean '(1 256/243 9/8 32/27 81/64 4/3 729/512 3/2 128/81 27/16 16/9 243/128),
          :justIntonation '(1 16/15 9/8 6/5 5/4 4/3 45/32 3/2 8/5 5/3 9/5 15/8)
+         :odonnel (list 1,(* 8/9 twelfth3),
+                        (* 8/9 twelfth4),(* 8/9 twelfth5),
+                        (* 8/9 twelfth6),
+                        4/3,(* 8/9 twelfth4 twelfth4),
+                        (* 4/3 twelfth2),(* 8/9 twelfth6 twelfth4),
+                        (* 32/27 twelfth6),(* twelfth6 twelfth4),
+                        (* 32/27 twelfth4 twelfth4))
+         :neidhardt (list 1,(* 8/9 twelfth3),
+                        (* 8/9 twelfth4),(* 8/9 twelfth5),
+                        (* 8/9 twelfth6),
+                        4/3,(* 8/9 twelfth4 twelfth4),
+                        (* 4/3 twelfth2),(* 8/9 twelfth6 twelfth4),
+                        (* 32/27 twelfth6),(* 9/8 twelfth4 twelfth4),
+                        (* 32/27 twelfth4 twelfth4))
          }))
 
 (def counter (atom 0))
@@ -39,11 +61,91 @@
 
 (require '[overtone.inst.synth :as syn])
 
-(def flute syn/simple-flute)
+;(def flute syn/simple-flute)
 (def cs80  syn/cs80lead)
 (def ssaw  syn/supersaw)
 (def tick  syn/ticker)
 (def ping  syn/ping)
+
+(o/definst flute [freq 880
+                       amp 0.5
+                       attack 0.4
+                       decay 0.5
+                       sustain 0.8
+                       release 1
+                       gate 1
+                       out 0]
+  (let [env  (o/env-gen (o/adsr attack decay sustain release) gate :action o/FREE)
+        mod2 (o/lin-lin:kr (o/lf-noise2:kr 1) -1 1 0.2 1)
+        mod3 (o/lin-lin:kr (o/sin-osc:kr (o/ranged-rand 4 6)) -1 1 0.5 1)
+        sig (o/distort (* env (o/sin-osc freq)))
+        sig (* amp sig mod2 mod3)]
+    sig))
+
+
+;; IMPORTANT: requires the mda-piano ugen to be available on your system
+
+;; modified from repo to take freq rather than note
+(o/definst piano [freq 220
+                  gate 1
+                  vel 100
+                  decay 0.8
+                  release 0.8
+                  hard 0.8
+                  velhard 0.8
+                  muffle 0.8
+                  velmuff 0.8
+                  velcurve 0.8
+                  stereo 0.2
+                  tune 0.5
+                  random 0.1
+                  stretch 0
+                  sustain 0]
+  (let [snd (o/mda-piano {:freq freq
+                          :gate gate
+                          :vel vel
+                          :decay decay
+                          :release release
+                          :hard hard
+                          :velhard velhard
+                          :muffle muffle
+                          :velmuff velmuff
+                          :velcurve velcurve
+                          :stereo stereo
+                          :tune tune
+                          :random random
+                          :stretch stretch
+                          :sustain sustain})]
+                                        ;(o/detect-silence snd 0.05 :action o/FREE)
+    snd))
+
+;; modified from repo to take freq rather than note
+(o/definst mooger
+  "Choose 0, 1, or 2 for saw, sin, or pulse"
+  [freq 220
+   amp  {:default 0.5 :min 0 :max 1 :step 0.01}
+   osc1 {:default 0 :min 0 :max 2 :step 1}
+   osc2 {:default 1 :min 0 :max 2 :step 1}
+   osc1-level {:default 0.5 :min 0 :max 1 :step 0.01}
+   osc2-level {:default 0.3 :min 0 :max 1 :step 0.01}
+   cutoff {:default 500 :min 0 :max 20000 :step 1}
+   attack {:default 0.0001 :min 0.0001 :max 5 :step 0.001}
+   decay {:default 0.3 :min 0.0001 :max 5 :step 0.001}
+   sustain {:default 0.99 :min 0.0001 :max 1 :step 0.001}
+   release {:default 0.0001 :min 0.0001 :max 6 :step 0.001}
+   fattack {:default 0.0001 :min 0.0001 :max 6 :step 0.001}
+   fdecay {:default 0.3 :min 0.0001 :max 6 :step 0.001}
+   fsustain {:default 0.999 :min 0.0001 :max 1 :step 0.001}
+   frelease {:default 0.0001 :min 0.0001 :max 6 :step 0.001}
+   gate 1]
+  (let [osc-bank-1 [(o/saw freq) (o/sin-osc freq) (o/pulse freq)]
+        osc-bank-2 [(o/saw freq) (o/sin-osc freq) (o/pulse freq)]
+        amp-env    (o/env-gen (o/adsr attack decay sustain release) gate :action o/FREE)
+        f-env      (o/env-gen (o/adsr fattack fdecay fsustain frelease) gate)
+        s1         (* osc1-level (o/select osc1 osc-bank-1))
+        s2         (* osc2-level (o/select osc2 osc-bank-2))
+        filt       (o/moog-ff (+ s1 s2) (* cutoff f-env) 3)]
+    (* amp filt)))
 
 (def inst-cur flute)
 
@@ -55,13 +157,22 @@
 
 (def aof-subject '([:d4 2] [:a4 2] [:f4 2] [:d4 2] [:c#4 2] [:d4 1]
                    [:e4 1] [:f4 2.5] [:g4 0.5] [:f4 0.5] [:e4 0.5] [:d4 1]))
-(def major '([:c4 1] [:d4 1] [:e4 1] [:f4 1] [:g4 1] [:a4 1] [:b4 1] [:c5 1]))
-(def minor '([:c4 1] [:d4 1] [:eb4 1] [:f4 1] [:g4 1] [:ab4 1] [:bb4 1] [:c5 1]))
+(def major
+  (let [half '([:c4 1] [:d4 1] [:e4 1] [:f4 1] [:g4 1] [:a4 1] [:b4 1] [:c5 1])
+        rev (drop 1 (reverse half))]
+    (concat half rev)))
+(def minor
+  (let [half '([:c4 1] [:d4 1] [:d#4 1] [:f4 1] [:g4 1] [:a4 1] [:b4 1] [:c5 1])
+        rev (concat '([:a#4 1] [:g#4 1]) (drop 3 (reverse half)))]
+    (concat half rev)))
+
 
 (defn inst-chooser [e]
   (let [val (value (.getSource e))]
     (case val
       "Flute"  (def inst-cur flute)
+      "Piano"  (def inst-cur piano)
+      "Mooger" (def inst-cur mooger)
       "CS80"   (def inst-cur cs80)
       "SSaw"   (def inst-cur ssaw)
       "Ticker" (def inst-cur tick)
@@ -108,7 +219,9 @@
     (case val
       "Equal"       (reset! tuning :equalTemperament)
       "Pythagorean" (reset! tuning :pythagorean)
-      "Just"        (reset! tuning :justIntonation)))
+      "Just"        (reset! tuning :justIntonation)
+      "O'Donnel"        (reset! tuning :odonnel)
+      "Neidhardt"        (reset! tuning :neidhardt)))
   ;;(println (midi->freq 60))
   )
 
@@ -160,22 +273,25 @@
 ;;(println aof-subject)
 
 (defn play-one
-  [metronome beat instrument [pitch dur]]
+  [metronome beat instrument [pitch dur] {midiq :midi}]
   (let [end (+ beat dur)]
     (if pitch
-      (let [id (o/at (metronome beat) (instrument (midi->freq pitch)))]
+      (let [freq (if midiq
+                   (midi->freq pitch)
+                   pitch)
+            id (o/at (metronome beat) (instrument freq))]
         (o/at (metronome end) (o/ctl id :gate 0))))
     end))
 
 (defn play
-  ([metronome inst score]
-     (play metronome (metronome) inst score))
-  ([metronome beat instrument score]
+  ([metronome inst score {midiq :midi}]
+     (play metronome (metronome) inst score {:midi midiq}))
+  ([metronome beat instrument score {midiq :midi}]
      (let [cur-note (first score)]
        (when cur-note
-         (let [next-beat (play-one metronome beat instrument cur-note)]
+         (let [next-beat (play-one metronome beat instrument cur-note {:midi midiq})]
            (o/apply-at (metronome next-beat) play metronome next-beat instrument
-             (next score) []))))))
+             (next score) {:midi midiq} []))))))
 
 (def a-scale ["A" "B\u266D" "B" "C" "C\u266F" "D"
               "E\u266D" "E" "F" "F\u266F" "G" "G\u266F"] )
@@ -341,13 +457,13 @@
   (let [score (or @melody
                   (make-score))]
     (doseq [part score]
-      (play one-twenty-bpm inst-cur part))))
+      (play one-twenty-bpm inst-cur part {:midi true}))))
 
 (defn play-solo [id e]
   (let [[mel rhy] (make-part id)
         notes (map str->midi mel)
         part (map vector notes rhy)]
-    (play one-twenty-bpm inst-cur part)))  
+    (play one-twenty-bpm inst-cur part {:midi true})))  
     
 (defn remove-circle [id kw]
   (let [len (get-in @melody-map [id kw])
@@ -521,7 +637,8 @@
                            (label :text ""
                                   :size [100 :by 30])
                            (label "Instrument:")
-                           (combobox :model ["Flute" "CS80" "SSaw" "Ticker" "Ping"]
+                           (combobox :model ["Flute" "Piano" "Mooger" "CS80"
+                                             "SSaw" "Ticker" "Ping"]
                                      :id :instChooser
                                      :listen [:action inst-chooser])
                            (label "Tonic:")
@@ -529,7 +646,8 @@
                                      :id :tonicChooser
                                      :listen [:action tonic-chooser])
                            (label "Tuning:")
-                           (combobox :model ["Equal" "Pythagorean" "Just"]
+                           (combobox :model ["Equal" "Pythagorean" "Just"
+                                             "O'Donnel" "Neidhardt"]
                                      :id :tuningChooser
                                      :listen [:action tuning-chooser])
                            (label "Melody:")
