@@ -15,6 +15,10 @@
 
 (def tuning (atom :equalTemperament))
 
+(def tempo (atom 120))
+
+(def repetition (atom false))
+
 (def twelfth6 (sqrt 2))
 (def twelfth3 (sqrt twelfth6))
 (def twelfth1  (expt twelfth3 1/3))
@@ -240,9 +244,6 @@
 ; setup a sound for our metronome to use
 (def kick syn/ticker)
  
-; setup a tempo for our metronome to use
-(def one-twenty-bpm (o/metronome 120))
- 
 ; this function will play our sound at whatever tempo we've set our metronome to
 (defn looper [nome sound]
     (let [beat (nome)]
@@ -295,13 +296,14 @@
 
 (defn play
   ([metronome inst score {midiq :midi}]
-     (play metronome (metronome) inst score {:midi midiq}))
+   (play metronome (metronome) inst score {:midi midiq}))
   ([metronome beat instrument score {midiq :midi}]
-     (let [cur-note (first score)]
-       (when cur-note
-         (let [next-beat (play-one metronome beat instrument cur-note {:midi midiq})]
-           (o/apply-at (metronome next-beat) play metronome next-beat instrument
-             (next score) {:midi midiq} []))))))
+   (let [cur-note (first score)]
+     (if cur-note
+       (let [next-beat (play-one metronome beat instrument cur-note {:midi midiq})]
+         (o/apply-at (metronome next-beat)
+                     play metronome next-beat instrument
+                     (next score) {:midi midiq} []))))))
 
 (def a-scale ["A" "B\u266D" "B" "C" "C\u266F" "D"
               "E\u266D" "E" "F" "F\u266F" "G" "G\u266F"] )
@@ -448,21 +450,24 @@
             notes (map str->midi melodyseq)
             part (cons thisinstr (map vector notes rhythm))]
         (swap! score conj part)))
-    @score))
+    [@score, totaltime]))
 
-
-            
 (defn play-melody [e]
-  (let [score (or @melody
-                  (make-score))]
+  (let [[score len] (if @melody
+                      [@melody 20]
+                      (make-score))
+        metro (o/metronome @tempo)
+        endseq (atom '())]
     (doseq [[instr & part] score]
-      (play one-twenty-bpm (str->instr instr) part {:midi true}))))
+      (play metro (str->instr instr) part {:midi true}))
+    (o/apply-at (metro len) #(if @repetition (play-melody nil)))
+    ))
   
 (defn play-solo [id e]
   (let [[mel rhy _ instr] (make-part id)
         notes (map str->midi mel)
         part (map vector notes rhy)]
-    (play one-twenty-bpm (str->instr instr) part {:midi true})))  
+    (play (o/metronome @tempo) (str->instr instr) part {:midi true})))  
     
 (defn remove-circle [id kw]
   (let [len (get-in @melody-map [id kw])
@@ -560,7 +565,7 @@
         mellist (map #(keyword (s/join [melprefix (str %)])) (range mellen))
         rhylist (map #(keyword (s/join [rhyprefix (str %)])) (range rhylen))
         idlist (vec (concat mellist rhylist))
-        circhash (atom '())]
+        circhash (atom {})]
     (doseq [k idlist]
       (let [w (select panel [k])]
         (swap! circhash assoc k (value w))))
@@ -599,10 +604,23 @@
       (let [val {:panhash (dissoc v :root),
                  :circhash (make-circles-hash k)}]
         (swap! dump assoc k val)))
+    (swap! dump assoc :tempo @tempo)
     @dump))
         
+;; create slider used to adjust tempo
+(def tempo-slider
+  (slider :orientation :horizontal
+          ;:value 120
+          :min 20
+          :max 360
+          :snap-to-ticks? false
+          :paint-labels? true
+          :major-tick-spacing 100
+          :minor-tick-spacing 20))
+
 (defn restore-dump [dump]
-  (doseq [[oldid {:keys [panhash circhash]}] dump]
+  (value! tempo-slider (get dump :tempo))
+  (doseq [[oldid {:keys [panhash circhash]}] (dissoc dump :tempo)]
     (restore-panel oldid panhash circhash)))
 
 (defn save-pattern [e]
@@ -618,8 +636,23 @@
             dump (clojure.edn/read-string dumpstr)]
         (restore-dump dump)))))
 
+
+;; handler for tempo-slider
+(listen tempo-slider
+        :change
+        (fn [e]
+          (reset! tempo (value tempo-slider))))
+
+(value! tempo-slider 120)
+
+(def repeat-label (label " Off"))
+
+(defn repeat-action [e]
+  (swap! repetition not)
+  (value! repeat-label (if @repetition " On" " Off")))
+                         
 (def control-frame
-  (frame :title "Tuning Demo"
+  (frame :title "Music Demo"
          :content (vertical-panel
                    :items [;; play tone
                            (button :id :playTestTone
@@ -642,6 +675,19 @@
                            ;; spacer
                            (label :text ""
                                   :size [100 :by 30])
+                           (label "Tempo:")
+                           tempo-slider
+                           ;; spacer
+                           (label :text ""
+                                  :size [100 :by 30])
+                           (horizontal-panel
+                            :items [(button :id :repeats
+                                            :text "Repeat?"
+                                            :listen [:action repeat-action])
+                                    repeat-label])
+                           (combobox :model instruments
+                                     :id :instChooser
+                                     :listen [:action inst-chooser])
                            (label "Instrument:")
                            (combobox :model instruments
                                      :id :instChooser
