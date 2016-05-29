@@ -62,6 +62,7 @@
 
 (if (not (o/server-connected?))
   (o/boot-external-server))
+  ;(o/connect-external-server 60106))
 
 (require '[overtone.inst.synth :as syn])
 
@@ -469,22 +470,24 @@
         part (map vector notes rhy)]
     (play (o/metronome @tempo) (str->instr instr) part {:midi true})))  
     
-(defn remove-circle [id kw]
-  (let [len (get-in @melody-map [id kw])
-        kwstring (case kw
-                   :pitches "-mel-"
-                   :beats   "-rhy-")
-        idprefix (s/join ["#kb-" id kwstring])
-        idlist (vec (map #(keyword (s/join [idprefix (str %)])) (range len)))
-        root (get-in @melody-map [id :root])
-        panel (select root [:#kb])
-        circhash (atom {})]
-    ;(println idlist)
-    (doseq [k idlist]
-      (let [w (select panel [k])]
-        (swap! circhash assoc k (value w))
-        (remove! panel w)))
-    @circhash))
+(defn remove-circle
+  ([id kw] (remove-circle id kw true))
+  ([id kw del?]
+   (let [len (get-in @melody-map [id kw])
+         kwstring (case kw
+                    :pitches "-mel-"
+                    :beats   "-rhy-")
+         idprefix (s/join ["#kb-" id kwstring])
+         idlist (vec (map #(keyword (s/join [idprefix (str %)])) (range len)))
+         root (get-in @melody-map [id :root])
+         panel (select root [:#kb])
+         circhash (atom {})]
+                                        ;(println idlist)
+     (doseq [k idlist]
+       (let [w (select panel [k])]
+         (swap! circhash assoc k (value w))
+         (when del? (remove! panel w))))
+     @circhash)))
 
 (defn change-circle-mel [id newnum]
   (let [root (get-in @melody-map [id :root])
@@ -492,13 +495,15 @@
         rhyvals (remove-circle id :beats)
         len (get-in @melody-map [id :beats])
         idprefix (s/join ["#kb-" id "-rhy-"])
-        kwlist (vec (map #(keyword (s/join [idprefix (str %)])) (range len)))]
+        kwlist (vec (map #(keyword (s/join [idprefix (str %)])) (range len)))
+        transtag (keyword (s/join ["#kb-" id "-mel-translate"]))
+        transbut (select root [transtag])]
     (remove-circle id :pitches)
     (swap! melody-map assoc-in [id :pitches] newnum)
     (config! panel :items (concat (make-note-circle-mel id) (make-note-circle-rhy id)))
     (doseq [kw kwlist]
       (value! (select panel [kw]) (get rhyvals kw)))
-    ))
+    (config! transbut :model (range newnum))))
         
 (defn change-circle-rhy [id newnum]
   (let [root (get-in @melody-map [id :root])
@@ -506,14 +511,88 @@
         melvals (remove-circle id :pitches)
         len (get-in @melody-map [id :pitches])
         idprefix (s/join ["#kb-" id "-mel-"])
-        kwlist (vec (map #(keyword (s/join [idprefix (str %)])) (range len)))]
+        kwlist (vec (map #(keyword (s/join [idprefix (str %)])) (range len)))
+        transtag (keyword (s/join ["#kb-" id "-rhy-translate"]))
+        transbut (select root [transtag])]
     (remove-circle id :beats)
     (swap! melody-map assoc-in [id :beats] newnum)
     (config! panel :items (concat (make-note-circle-mel id) (make-note-circle-rhy id)))
     (doseq [kw kwlist]
       (value! (select panel [kw]) (get melvals kw)))
-    ))
-        
+    (config! transbut :model (range newnum))))
+
+(defn id->root [id]
+  (get-in @melody-map [id :root]))
+
+(defn id->panel [id]
+  (let [root (id->root id)]
+    (select root [:#kb])))
+
+(defn make-kw-list [prefix len]
+  (vec (map #(keyword (s/join [prefix (str %)])) (range len))))
+
+(defn kw->idtag [kw]
+  (let [word (subs (str kw) 1)]
+    (keyword (s/join ["#" word]))))
+
+(defn select-by-id [pan kw]
+  (let [tag (kw->idtag kw)]
+    (select pan [tag])))
+
+(defn get-e-val [e]
+  (value (.getSource e)))
+
+;;;;;;;;;;;;;; transforms start
+
+(defn translate-seq 
+  ([n] #(translate-seq n %))
+  ([n seq]
+   (let [del (mod n (count seq))
+         head (take del seq)
+         tail (drop del seq)]
+     (concat tail head))))
+  
+(defn reflect-seq
+  ([n] #(reflect-seq n %))
+  ([n seq]
+   (let [del (mod (+ n 1) (count seq))
+         trans (translate-seq del seq)]
+     (reverse trans))))
+
+(defn transform-dict [dict trans]
+  (let [kws (keys dict)
+        oldvals (vals dict)
+        newvals (trans oldvals)
+        pairs (map #(vector %1 %2) kws newvals)]
+    (into {} pairs)))    
+    
+(defn transform-necklace [trans id typekw]
+  (let [panel (id->panel id)
+        olddict (remove-circle id typekw false)
+        newdict (transform-dict olddict trans)
+        kwlist (keys newdict)]
+    (doseq [kw kwlist]
+        (value! (select panel [kw]) (get newdict kw)))))
+
+(defn make-transform-panel [id typekw]
+  (let [len (get-in @melody-map [id typekw])
+        typename (if (= typekw :beats)
+                   "-rhy-" "-mel-")
+        reflect-button (button :text "Reflect!"
+                               :listen [:action (fn [e]
+                                                  (transform-necklace
+                                                   (reflect-seq 0) id typekw))])
+        translabel (label "Translate: ")
+        transbox (combobox :model (range len)
+                           :id (keyword (s/join ["kb-" id typename "translate"]))
+                           :listen [:action (fn [e]
+                                           (transform-necklace
+                                                   (translate-seq (get-e-val e))
+                                                   id typekw))])]
+    (horizontal-panel :items [reflect-button translabel transbox])))
+
+;;;;;;;;;;;;;; transforms end
+
 (defn make-panel-controls [id]
   (let [cbp (combobox :model (range 1 10)
                       :id (keyword (s/join ["kb-" (str id) "-numpitch"]))
@@ -546,14 +625,17 @@
                  :listen [:window-closing
                           (fn [e]
                             (swap! melody-map dissoc id))])
-        verticalpanel (vertical-panel :items [pan chinstr playsolo controls])
         numcbs 1]
     (swap! melody-map assoc id {:pitches numcbs, :beats numcbs,
                                 :root f, :instr "Default"})
     (add-note-circles id pan)
-    (config! f :content verticalpanel)
-    (-> f pack! show!)
-    f))
+    (let [mel-controls (make-transform-panel id :pitches)
+          rhy-controls (make-transform-panel id :beats)
+          verticalpanel (vertical-panel :items [mel-controls pan rhy-controls
+                                                chinstr playsolo controls])]
+      (config! f :content verticalpanel)
+      (-> f pack! show!)
+      f)))
 
 (defn make-circles-hash [id]
   (let [root (get-in @melody-map [id :root])
@@ -685,9 +767,6 @@
                                             :text "Repeat?"
                                             :listen [:action repeat-action])
                                     repeat-label])
-                           (combobox :model instruments
-                                     :id :instChooser
-                                     :listen [:action inst-chooser])
                            (label "Instrument:")
                            (combobox :model instruments
                                      :id :instChooser
