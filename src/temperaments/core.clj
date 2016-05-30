@@ -61,8 +61,9 @@
     (* tonic-freq (Math/pow 2 octave) (nth (get @tuning-map @tuning) interval))))
 
 (if (not (o/server-connected?))
-  (o/boot-external-server))
-  ;(o/connect-external-server 60106))
+  ;(o/boot-external-server 57110)
+  (o/connect-external-server 57110)
+)
 
 (require '[overtone.inst.synth :as syn])
 
@@ -192,43 +193,61 @@
         oldmap (get @melody-map id)
         newmap (assoc oldmap :instr val)]
     (swap! melody-map assoc id newmap)))    
-  
+
+(def name->note
+  {"A"       :a3,
+   "B\u266D" :a#3,
+   "B"       :b3,
+   "C"       :c4,
+   "C\u266F" :c#4,
+   "D"       :d4,
+   "E\u266D" :d#4,
+   "E"       :e4,
+   "F"       :f4,
+   "F\u266F" :f#4,
+   "G"       :g4,
+   "G\u266F" :g#4})
+
+(def note-names '("A" "B♭" "B" "C" "C♯" "D" "E♭" "E" "F" "F♯" "G" "G♯"))
+ 
+;; (defn invert-hash [hash]
+;;   (let [gr (group-by val hash)
+;;         pairs (map #(vector (->> % val first first) (key %)) gr)]
+;;     (into {} pairs)))
+
+;; (def note->name
+;;   (invert-hash name->note))
+
+;; (def note->midi
+;;   (let [notes (keys name->note)
+;;         midis (map o/note notes)
+;;         pairs (map vector midis notes)]
+;;     (into {} pairs)))
+
+;; (def midi->note
+;;   (invert-hash note->midi))
+
 (defn tonic-chooser [e]
   (let [val (value (.getSource e))]
-    (case val
-      "A"       (reset! tonic :a3)
-      "B\u266D" (reset! tonic :a#3)
-      "B"       (reset! tonic :b3)
-      "C"       (reset! tonic :c4)
-      "C\u266F" (reset! tonic :c#4)
-      "D"       (reset! tonic :d4)
-      "E\u266D" (reset! tonic :d#4)
-      "E"       (reset! tonic :e4)
-      "F"       (reset! tonic :f4)
-      "F\u266F" (reset! tonic :f#4)
-      "G"       (reset! tonic :g4)
-      "G\u266F" (reset! tonic :g#4))))
+    (reset! tonic (get name->note val))))
 
 (defn str->midi [strnote]
   (let [oct (read-string (str (last strnote)))
         len (dec (count strnote))
         val (subs strnote 0 len)
-        octch (* 12 (- oct 4))]
-    (case val
-      "C"       (+ 60 octch)
-      "C\u266F" (+ 61 octch)
-      "D"       (+ 62 octch)
-      "E\u266D" (+ 63 octch)
-      "E"       (+ 64 octch)
-      "F"       (+ 65 octch)
-      "F\u266F" (+ 66 octch)
-      "G"       (+ 67 octch)
-      "G\u266F" (+ 68 octch)
-      "A"       (+ 69 octch)
-      "B\u266D" (+ 70 octch)
-      "B"       (+ 71 octch)
-)))
+        corr (case val ("A" "B♭" "B") 3 4)
+        octch (* 12 (- oct corr))]
+    (+ (o/note (name->note val)) octch)))
 
+
+(defn midi->str [midi]
+  (let [diff (- midi 59)
+        corr (if (> diff 0) 0 -1)
+        oct (+ 4 corr (quot diff 12))
+        ind (mod (+ diff 2) 12)
+        nm (nth note-names ind)]
+    (s/join [nm (str oct)])))
+        
 (defn tuning-chooser [e]
   (let [val (value (.getSource e))]
     (case val
@@ -559,6 +578,36 @@
          trans (translate-seq del seq)]
      (reverse trans))))
 
+(defn transpose-seq
+  ([n] #(transpose-seq n %))
+  ([n seq]
+   (map #(+ n %) seq)))
+
+(defn transpose-names
+  ([n] #(transpose-names n %))
+  ([n seq]
+   (let [oldnotes (map str->midi seq)
+         newnotes (transpose-seq n oldnotes)]
+     (map midi->str newnotes))))
+
+(defn invert-about
+  ([center] #(invert-about center %))
+  ([center nt]
+   (let [diff (- nt center)]
+     (int (- center diff)))))
+      
+(defn invert-seq
+  ([center] #(invert-seq center %))
+  ([center seq]
+   (map (invert-about center) seq)))
+
+(defn invert-names
+  ([n] #(invert-names n %))
+  ([n seq]
+   (let [oldnotes (map str->midi seq)
+         newnotes (invert-seq n oldnotes)]
+     (map midi->str newnotes))))
+
 (defn transform-dict [dict trans]
   (let [kws (keys dict)
         oldvals (vals dict)
@@ -589,6 +638,22 @@
                                            (transform-necklace
                                                    (translate-seq (get-e-val e))
                                                    id typekw))])]
+    (horizontal-panel :items [reflect-button translabel transbox])))
+
+(defn make-rowops-panel [id]
+  (let [reflect-button (button :text "Invert!"
+                               :listen [:action
+                                        (fn [e]
+                                          (transform-necklace
+                                           (invert-names (+ (o/note @tonic) 3.5))
+                                           id :pitches))])
+        translabel (label "Transpose: ")
+        transbox (combobox :model (range -6 7)
+                           :id (keyword (s/join ["kb-" id "-mel-transpose"]))
+                           :listen [:action (fn [e]
+                                           (transform-necklace
+                                                   (transpose-names (get-e-val e))
+                                                   id :pitches))])]
     (horizontal-panel :items [reflect-button translabel transbox])))
 
 ;;;;;;;;;;;;;; transforms end
@@ -629,10 +694,12 @@
     (swap! melody-map assoc id {:pitches numcbs, :beats numcbs,
                                 :root f, :instr "Default"})
     (add-note-circles id pan)
-    (let [mel-controls (make-transform-panel id :pitches)
+    (let [rowops (make-rowops-panel id)
+          mel-controls (make-transform-panel id :pitches)
           rhy-controls (make-transform-panel id :beats)
-          verticalpanel (vertical-panel :items [mel-controls pan rhy-controls
-                                                chinstr playsolo controls])]
+          verticalpanel (vertical-panel :items [rowops mel-controls pan
+                                                rhy-controls chinstr
+                                                playsolo controls])]
       (config! f :content verticalpanel)
       (-> f pack! show!)
       f)))
