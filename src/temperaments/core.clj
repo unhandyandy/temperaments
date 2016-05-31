@@ -62,7 +62,7 @@
 
 (if (not (o/server-connected?))
   ;(o/boot-external-server 57110)
-  (o/connect-external-server 57110)
+  (o/connect-external-server 57120)
 )
 
 (require '[overtone.inst.synth :as syn])
@@ -92,38 +92,38 @@
 ;; IMPORTANT: requires the mda-piano ugen to be available on your system
 
 ;; modified from repo to take freq rather than note
-(o/definst piano [freq 220
-                  gate 1
-                  vel 100
-                  decay 0.8
-                  release 0.8
-                  hard 0.8
-                  velhard 0.8
-                  muffle 0.8
-                  velmuff 0.8
-                  velcurve 0.8
-                  stereo 0.2
-                  tune 0.5
-                  random 0.1
-                  stretch 0
-                  sustain 0]
-  (let [snd (o/mda-piano {:freq freq
-                          :gate gate
-                          :vel vel
-                          :decay decay
-                          :release release
-                          :hard hard
-                          :velhard velhard
-                          :muffle muffle
-                          :velmuff velmuff
-                          :velcurve velcurve
-                          :stereo stereo
-                          :tune tune
-                          :random random
-                          :stretch stretch
-                          :sustain sustain})]
-                                        ;(o/detect-silence snd 0.05 :action o/FREE)
-    snd))
+;; (o/definst piano [freq 220
+;;                   gate 1
+;;                   vel 100
+;;                   decay 0.8
+;;                   release 0.8
+;;                   hard 0.8
+;;                   velhard 0.8
+;;                   muffle 0.8
+;;                   velmuff 0.8
+;;                   velcurve 0.8
+;;                   stereo 0.2
+;;                   tune 0.5
+;;                   random 0.1
+;;                   stretch 0
+;;                   sustain 0]
+;;   (let [snd (o/mda-piano {:freq freq
+;;                           :gate gate
+;;                           :vel vel
+;;                           :decay decay
+;;                           :release release
+;;                           :hard hard
+;;                           :velhard velhard
+;;                           :muffle muffle
+;;                           :velmuff velmuff
+;;                           :velcurve velcurve
+;;                           :stereo stereo
+;;                           :tune tune
+;;                           :random random
+;;                           :stretch stretch
+;;                           :sustain sustain})]
+;;                                         ;(o/detect-silence snd 0.05 :action o/FREE)
+;;     snd))
 
 ;; modified from repo to take freq rather than note
 (o/definst mooger
@@ -154,7 +154,8 @@
         filt       (o/moog-ff (+ s1 s2) (* cutoff f-env) 3)]
     (* amp filt)))
 
-(def instruments ["Flute" "Piano" "Mooger" "CS80" "SSaw" "Ticker" "Ping"])
+(def instruments ["Flute" ;"Piano"
+                  "Mooger" "CS80" "SSaw" "Ticker" "Ping"])
 
 (def inst-cur flute)
 
@@ -175,7 +176,7 @@
 (defn str->instr [str]
   (case str
     "Flute"   flute,
-    "Piano"   piano,
+    ;"Piano"   piano,
     "Mooger"  mooger,
     "CS80"    cs80,
     "SSaw"    ssaw,
