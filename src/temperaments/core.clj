@@ -64,9 +64,11 @@
   ;(o/boot-external-server 57110)
   (o/connect-external-server 57110)
 )
-(if (not (o/server-connected?))
-  (o/connect-external-server 57121)
-)
+(while (not (o/server-connected?))
+  (let [port (input "What port should we try?"
+                    :value 57110)]
+    (o/connect-external-server port)
+  ))
 
 (require '[overtone.inst.synth :as syn])
 
