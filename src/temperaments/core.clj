@@ -60,11 +60,11 @@
         interval (mod diff 12)]
     (* tonic-freq (Math/pow 2 octave) (nth (get @tuning-map @tuning) interval))))
 
+;; (if (not (o/server-connected?))
+;;   ;(o/boot-external-server 57110)
+;;   (o/connect-external-server 57110)
+;; )
 (if (not (o/server-connected?))
-  ;(o/boot-external-server 57110)
-  (o/connect-external-server 57110)
-)
-(while (not (o/server-connected?))
   (let [port (input "What port should we try?"
                     :value 57110)]
     (o/connect-external-server port)
