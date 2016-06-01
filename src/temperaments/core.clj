@@ -65,8 +65,9 @@
 ;;   (o/connect-external-server 57110)
 ;; )
 (if (not (o/server-connected?))
-  (let [port (input "What port should we try?"
-                    :value 57110)]
+  (let [portstr (input "What port should we try?"
+                       :value 57110)
+        port (read-string portstr)]
     (o/connect-external-server port)
   ))
 
