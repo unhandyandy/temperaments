@@ -62,7 +62,10 @@
 
 (if (not (o/server-connected?))
   ;(o/boot-external-server 57110)
-  (o/connect-external-server 57120)
+  (o/connect-external-server 57110)
+)
+(if (not (o/server-connected?))
+  (o/connect-external-server 57121)
 )
 
 (require '[overtone.inst.synth :as syn])
@@ -655,6 +658,7 @@
                                            (transform-necklace
                                                    (transpose-names (get-e-val e))
                                                    id :pitches))])]
+    (value! reflect-button 0)
     (horizontal-panel :items [reflect-button translabel transbox])))
 
 ;;;;;;;;;;;;;; transforms end
@@ -854,6 +858,8 @@
                                      :id :melodyChooser
                                      :listen [:action melody-chooser])
                            ])))
+
+(config! control-frame :on-close :exit)
 
 (defn -main [& args]
   (-> control-frame pack! show!)
