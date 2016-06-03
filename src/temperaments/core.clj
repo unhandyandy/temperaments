@@ -722,17 +722,19 @@
 (defn make-mono-panel [id]
   (let [prefix (s/join ["monochord-" (str id) "-"])
         tonic-kw (keyword (s/join [prefix "tonic"]))
+        tonic-label (label "Tonic: ")
         tonic-box (combobox :model keyboard)
+        tonic-bar (horizontal-panel :items [tonic-label tonic-box])
         note-label (label "Ratio: ")
         note-ratio (text :text "" :editable? true)
         note-bar (horizontal-panel :items [note-label note-ratio])
-        mode-button (button :text "Consecutive"
+        mode-button (button :text "Seq."
                             :listen [:action (fn [e]
                                                (let [src (.getSource e)
-                                                     curval (value src)]
-                                                 (if (= curval "Consecutive")
-                                                   (config! src :text "Simultaneous")
-                                                   (config! src :text "Consecutive"))))])
+                                                     curval (config src :text)]
+                                                 (if (= curval "Seq.")
+                                                   (config! src :text "Chord")
+                                                   (config! src :text "Seq."))))])
         play-button (button :text "Play"
                             :listen [:action
                                      (fn [e]
@@ -743,8 +745,8 @@
                                              notefreq (* tonfreq ratio)
                                              tonvec [tonfreq 1]
                                              notevec [notefreq 1]
-                                             simul (= "Simultaneous"
-                                                      (value mode-button))
+                                             simul (= "Chord"
+                                                      (config mode-button :text))
                                              score (if simul
                                                      [["Default" tonvec]
                                                       ["Default" notevec]]
@@ -753,8 +755,8 @@
                                              metro (o/metronome @tempo)]
                                          (play-score score false)))])
         pan (vertical-panel :id :monochord
-                            :size [100 :by 200]
-                            :items [tonic-box note-bar mode-button play-button])
+                            :size [160 :by 105]
+                            :items [tonic-bar note-bar mode-button play-button])
         f (frame :title (s/join ["Monochord " (str id)])
                  :id (s/join ["mono-" (str id)])
                  :content pan)]
