@@ -65,7 +65,7 @@
 ;;   (o/connect-external-server 57110)
 ;; )
 (if (not (o/server-connected?))
-  (let [portstr (input "What port should we try?"
+  (let [portstr (input "Which port should we try?"
                        :value 57110)
         port (read-string portstr)]
     (o/connect-external-server port)
@@ -98,38 +98,38 @@
 ;; IMPORTANT: requires the mda-piano ugen to be available on your system
 
 ;; modified from repo to take freq rather than note
-;; (o/definst piano [freq 220
-;;                   gate 1
-;;                   vel 100
-;;                   decay 0.8
-;;                   release 0.8
-;;                   hard 0.8
-;;                   velhard 0.8
-;;                   muffle 0.8
-;;                   velmuff 0.8
-;;                   velcurve 0.8
-;;                   stereo 0.2
-;;                   tune 0.5
-;;                   random 0.1
-;;                   stretch 0
-;;                   sustain 0]
-;;   (let [snd (o/mda-piano {:freq freq
-;;                           :gate gate
-;;                           :vel vel
-;;                           :decay decay
-;;                           :release release
-;;                           :hard hard
-;;                           :velhard velhard
-;;                           :muffle muffle
-;;                           :velmuff velmuff
-;;                           :velcurve velcurve
-;;                           :stereo stereo
-;;                           :tune tune
-;;                           :random random
-;;                           :stretch stretch
-;;                           :sustain sustain})]
-;;                                         ;(o/detect-silence snd 0.05 :action o/FREE)
-;;     snd))
+(o/definst piano [freq 220
+                  gate 1
+                  vel 100
+                  decay 0.8
+                  release 0.8
+                  hard 0.8
+                  velhard 0.8
+                  muffle 0.8
+                  velmuff 0.8
+                  velcurve 0.8
+                  stereo 0.2
+                  tune 0.5
+                  random 0.1
+                  stretch 0
+                  sustain 0]
+  (let [snd (o/mda-piano {:freq freq
+                          :gate gate
+                          :vel vel
+                          :decay decay
+                          :release release
+                          :hard hard
+                          :velhard velhard
+                          :muffle muffle
+                          :velmuff velmuff
+                          :velcurve velcurve
+                          :stereo stereo
+                          :tune tune
+                          :random random
+                          :stretch stretch
+                          :sustain sustain})]
+                                        ;(o/detect-silence snd 0.05 :action o/FREE)
+    snd))
 
 ;; modified from repo to take freq rather than note
 (o/definst mooger
@@ -160,7 +160,7 @@
         filt       (o/moog-ff (+ s1 s2) (* cutoff f-env) 3)]
     (* amp filt)))
 
-(def instruments ["Flute" ;"Piano"
+(def instruments ["Flute" "Piano"
                   "Mooger" "CS80" "SSaw" "Ticker" "Ping"])
 
 (def inst-cur flute)
@@ -182,7 +182,7 @@
 (defn str->instr [str]
   (case str
     "Flute"   flute,
-    ;"Piano"   piano,
+    "Piano"   piano,
     "Mooger"  mooger,
     "CS80"    cs80,
     "SSaw"    ssaw,
@@ -479,12 +479,18 @@
         (swap! score conj part)))
     [@score, totaltime]))
 
+(defn play-score
+  ([score] (play-score true))
+  ([score midiq]
+   (let [metro (o/metronome @tempo)]
+     (doseq [[instr & part] score]
+       (play metro (str->instr instr) part {:midi midiq})))))
+
 (defn play-melody [e]
   (let [[score len] (if @melody
                       [@melody 20]
                       (make-score))
-        metro (o/metronome @tempo)
-        endseq (atom '())]
+        metro (o/metronome @tempo)]
     (doseq [[instr & part] score]
       (play metro (str->instr instr) part {:midi true}))
     (o/apply-at (metro len) #(if @repetition (play-melody nil)))
@@ -712,6 +718,53 @@
       (-> f pack! show!)
       f)))
 
+
+(defn make-mono-panel [id]
+  (let [prefix (s/join ["monochord-" (str id) "-"])
+        tonic-kw (keyword (s/join [prefix "tonic"]))
+        tonic-box (combobox :model keyboard)
+        note-label (label "Ratio: ")
+        note-ratio (text :text "" :editable? true)
+        note-bar (horizontal-panel :items [note-label note-ratio])
+        mode-button (button :text "Consecutive"
+                            :listen [:action (fn [e]
+                                               (let [src (.getSource e)
+                                                     curval (value src)]
+                                                 (if (= curval "Consecutive")
+                                                   (config! src :text "Simultaneous")
+                                                   (config! src :text "Consecutive"))))])
+        play-button (button :text "Play"
+                            :listen [:action
+                                     (fn [e]
+                                       (let [ton (str->midi (value tonic-box))
+                                             tonfreq (midi->freq ton)
+                                             ratiostr (value note-ratio)
+                                             ratio (read-string ratiostr)
+                                             notefreq (* tonfreq ratio)
+                                             tonvec [tonfreq 1]
+                                             notevec [notefreq 1]
+                                             simul (= "Simultaneous"
+                                                      (value mode-button))
+                                             score (if simul
+                                                     [["Default" tonvec]
+                                                      ["Default" notevec]]
+                                                     [["Default" tonvec
+                                                       notevec]])
+                                             metro (o/metronome @tempo)]
+                                         (play-score score false)))])
+        pan (vertical-panel :id :monochord
+                            :size [100 :by 200]
+                            :items [tonic-box note-bar mode-button play-button])
+        f (frame :title (s/join ["Monochord " (str id)])
+                 :id (s/join ["mono-" (str id)])
+                 :content pan)]
+    (-> f pack! show!)))
+                                     
+(defn new-mono [e]
+  (swap! counter inc)
+  (make-mono-panel @counter))
+
+                                        
 (defn make-circles-hash [id]
   (let [root (get-in @melody-map [id :root])
         panel (select root [:#kb])
@@ -823,6 +876,9 @@
                            (button :id :newPanel
                                    :text "New Panel"
                                    :listen [:action new-panel])
+                           (button :id :monoChord
+                                   :text "Monochord"
+                                   :listen [:action new-mono])
                            (button :id :saveButt
                                    :text "Save"
                                    :listen [:action save-pattern])
@@ -862,7 +918,7 @@
                                      :listen [:action melody-chooser])
                            ])))
 
-(config! control-frame :on-close :exit)
+;(config! control-frame :on-close :exit)
 
 (defn -main [& args]
   (-> control-frame pack! show!)
