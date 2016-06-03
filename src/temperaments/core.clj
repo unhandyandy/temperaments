@@ -353,6 +353,12 @@
     (.setMaximumRowCount cb 24)
     cb))
 
+(defn make-ratio-box [id]
+  (let [cb (text :id (keyword (s/join ["poly-" id]))
+                 :text ""
+                 :editable? true)]
+    cb))
+
 (def panel-size [240 :by 500])
 (defn get-panel-size []
   [(first panel-size) (last panel-size)])
@@ -396,6 +402,26 @@
              (config! cb :bounds [x y wb hb])
              cb))
          (range rhy-hours))))
+
+(def polychord-panel-size [240 :by 240])
+  
+;; make chord keyboard for xyz-panel 
+(defn make-ratio-circle [id hours]
+  (let [[w & {h :by}] polychord-panel-size
+        angle (/ (* 2 (Math/PI)) hours)
+        radius (* w 0.3)
+        [xc yc] [(/ w 2) (/ h 2)]
+        [wb hb] [50 20]]
+    (map (fn [n]
+           (let [curangle (+ (/ Math/PI -2) (* n angle))
+                 x (+ xc (* radius (Math/cos curangle)))
+                 x (- x (/ wb 2))
+                 y (+ yc (* radius (Math/sin curangle)))
+                 y (- y (/ hb 2))
+                 cb (make-ratio-box id)]
+             (config! cb :bounds [x y wb hb])
+             cb))
+         (range hours))))
 
   ;; adds keyboards to xyz-panel 
 (defn add-note-circles [id panel]
@@ -500,8 +526,27 @@
   (let [[mel rhy _ instr] (make-part id)
         notes (map str->midi mel)
         part (map vector notes rhy)]
-    (play (o/metronome @tempo) (str->instr instr) part {:midi true})))  
-    
+    (play (o/metronome @tempo) (str->instr instr) part {:midi true})))
+
+(defn get-ratios [e]
+  (let [root (-> e .getSource .getParent)
+        panel (select root [:#ratios])
+        fields (select panel [:<javax.swing.text.JTextComponent>])
+        ratiostrs (map value fields)]
+    (map read-string ratiostrs)))
+
+(defn play-polychord [e]
+  (let [ratios (get-ratios e)
+        one (->> @tonic o/note midi->freq)
+        freqs (map #(* one %) ratios)
+        mode-button (select root [:#mode])
+        simul (= "Chord" (config mode-button :text))
+        score (if simul
+                (map #(list "Default" [% 1]) freqs)
+                [(cons "Default" (map #(vector % 1) freqs))])]
+    (play-score score false)))
+  
+
 (defn remove-circle
   ([id kw] (remove-circle id kw true))
   ([id kw del?]
@@ -552,6 +597,14 @@
     (doseq [kw kwlist]
       (value! (select panel [kw]) (get melvals kw)))
     (config! transbut :model (range newnum))))
+
+(defn change-circle-rat [root id newnum]
+  (let [panel (select root [:#ratios])
+        fields (select root [:<javax.swing.text.JTextComponent>])]
+    (doseq [t fields]
+      (remove! panel t))
+    (config! panel :items (make-ratio-circle id newnum))))
+  
 
 (defn id->root [id]
   (get-in @melody-map [id :root]))
@@ -761,10 +814,53 @@
                  :id (s/join ["mono-" (str id)])
                  :content pan)]
     (-> f pack! show!)))
+
+(def save-polychord)
+(def load-polychord)
+
+(defn make-poly-panel [id]
+  (let [prefix (s/join ["polychord-" (str id) "-"])
+        mode-button (button :text "Seq."
+                            :id :mode
+                            :listen [:action (fn [e]
+                                               (let [src (.getSource e)
+                                                     curval (config src :text)]
+                                                 (if (= curval "Seq.")
+                                                   (config! src :text "Chord")
+                                                   (config! src :text "Seq."))))])
+        play-button (button :text "Play"
+                            :listen [:action play-polychord])
+        sizer-label (label "# notes: ")
+        circle-sizer (combobox :model (range 1 10)
+                               :listen [:action
+                                        (fn [e]
+                                          (let [butt (.getSource e)
+                                                root (-> butt .getParent .getParent)]
+                                            (change-circle-rat root id (value butt))))])
+        sizer-bar (horizontal-panel :items [sizer-label circle-sizer])
+        saver (button :text "Save"
+                      :listen [:action save-polychord])
+        loader (button :text "Load"
+                      :listen [:action load-polychord])
+        fields (make-ratio-circle id 2)
+        pan (xyz-panel :id :ratios
+                       :size polychord-panel-size
+                       :items fields)
+        vertpan (vertical-panel :id :polychord
+                                :items [pan mode-button play-button sizer-bar saver loader])
+        f (frame :title (s/join ["Polychord " (str id)])
+                 :id (s/join ["poly-" (str id)])
+                 :content vertpan)]
+    (value! circle-sizer 2)
+    (-> f pack! show!)))
                                      
 (defn new-mono [e]
   (swap! counter inc)
   (make-mono-panel @counter))
+
+(defn new-poly [e]
+  (swap! counter inc)
+  (make-poly-panel @counter))
 
                                         
 (defn make-circles-hash [id]
@@ -848,6 +944,26 @@
             dump (clojure.edn/read-string dumpstr)]
         (restore-dump dump)))))
 
+(defn save-polychord [e]
+  (let [ratios (get-ratios e)
+        savefile (choose-file :type :save)]
+    (if savefile
+      (spit savefile (vec ratios)))))
+
+(defn load-polychord [e]
+  (let [loadfile (choose-file :type :open)]
+    (if loadfile
+      (let [dumpstr (slurp loadfile)
+            dump (clojure.edn/read-string dumpstr)
+            csize (count dump)
+            id (swap! counter inc)
+            fields (make-ratio-circle id csize)
+            root (-> e .getSource .getParent)
+            panel (select root [:#ratios])]
+        (doseq [[t r] (map vector fields dump)]
+          (value! t r))
+        (config! panel :items fields)))))
+
 
 ;; handler for tempo-slider
 (listen tempo-slider
@@ -879,8 +995,8 @@
                                    :text "New Panel"
                                    :listen [:action new-panel])
                            (button :id :monoChord
-                                   :text "Monochord"
-                                   :listen [:action new-mono])
+                                   :text "Polychord"
+                                   :listen [:action new-poly])
                            (button :id :saveButt
                                    :text "Save"
                                    :listen [:action save-pattern])
