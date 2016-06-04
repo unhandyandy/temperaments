@@ -98,38 +98,38 @@
 ;; IMPORTANT: requires the mda-piano ugen to be available on your system
 
 ;; modified from repo to take freq rather than note
-(o/definst piano [freq 220
-                  gate 1
-                  vel 100
-                  decay 0.8
-                  release 0.8
-                  hard 0.8
-                  velhard 0.8
-                  muffle 0.8
-                  velmuff 0.8
-                  velcurve 0.8
-                  stereo 0.2
-                  tune 0.5
-                  random 0.1
-                  stretch 0
-                  sustain 0]
-  (let [snd (o/mda-piano {:freq freq
-                          :gate gate
-                          :vel vel
-                          :decay decay
-                          :release release
-                          :hard hard
-                          :velhard velhard
-                          :muffle muffle
-                          :velmuff velmuff
-                          :velcurve velcurve
-                          :stereo stereo
-                          :tune tune
-                          :random random
-                          :stretch stretch
-                          :sustain sustain})]
-                                        ;(o/detect-silence snd 0.05 :action o/FREE)
-    snd))
+;; (o/definst piano [freq 220
+;;                   gate 1
+;;                   vel 100
+;;                   decay 0.8
+;;                   release 0.8
+;;                   hard 0.8
+;;                   velhard 0.8
+;;                   muffle 0.8
+;;                   velmuff 0.8
+;;                   velcurve 0.8
+;;                   stereo 0.2
+;;                   tune 0.5
+;;                   random 0.1
+;;                   stretch 0
+;;                   sustain 0]
+;;   (let [snd (o/mda-piano {:freq freq
+;;                           :gate gate
+;;                           :vel vel
+;;                           :decay decay
+;;                           :release release
+;;                           :hard hard
+;;                           :velhard velhard
+;;                           :muffle muffle
+;;                           :velmuff velmuff
+;;                           :velcurve velcurve
+;;                           :stereo stereo
+;;                           :tune tune
+;;                           :random random
+;;                           :stretch stretch
+;;                           :sustain sustain})]
+;;                                         ;(o/detect-silence snd 0.05 :action o/FREE)
+;;     snd))
 
 ;; modified from repo to take freq rather than note
 (o/definst mooger
@@ -160,7 +160,7 @@
         filt       (o/moog-ff (+ s1 s2) (* cutoff f-env) 3)]
     (* amp filt)))
 
-(def instruments ["Flute" "Piano"
+(def instruments ["Flute" ;"Piano"
                   "Mooger" "CS80" "SSaw" "Ticker" "Ping"])
 
 (def inst-cur flute)
@@ -182,7 +182,7 @@
 (defn str->instr [str]
   (case str
     "Flute"   flute,
-    "Piano"   piano,
+    ;"Piano"   piano,
     "Mooger"  mooger,
     "CS80"    cs80,
     "SSaw"    ssaw,
@@ -411,7 +411,7 @@
         angle (/ (* 2 (Math/PI)) hours)
         radius (* w 0.3)
         [xc yc] [(/ w 2) (/ h 2)]
-        [wb hb] [50 20]]
+        [wb hb] [70 20]]
     (map (fn [n]
            (let [curangle (+ (/ Math/PI -2) (* n angle))
                  x (+ xc (* radius (Math/cos curangle)))
@@ -539,6 +539,12 @@
   (let [ratios (get-ratios e)
         one (->> @tonic o/note midi->freq)
         freqs (map #(* one %) ratios)
+        root (-> e .getSource .getParent)
+        tonic-button (select root [:#tonic-mode])
+        tonic-mode (= (config tonic-button :text) "On")
+        freqs (if tonic-mode
+                freqs
+                (drop 1 freqs))
         mode-button (select root [:#mode])
         simul (= "Chord" (config mode-button :text))
         score (if simul
@@ -831,6 +837,16 @@
         play-button (button :text "Play"
                             :listen [:action play-polychord])
         sizer-label (label "# notes: ")
+        tonic-label (label "Tonic: ")
+        tonic-button (button :text "On"
+                             :id :tonic-mode
+                             :listen [:action (fn [e]
+                                               (let [src (.getSource e)
+                                                     curval (config src :text)]
+                                                 (if (= curval "On")
+                                                   (config! src :text "Off")
+                                                   (config! src :text "On"))))])
+        tonic-bar (horizontal-panel :items [tonic-label tonic-button])
         circle-sizer (combobox :model (range 1 10)
                                :listen [:action
                                         (fn [e]
@@ -847,7 +863,8 @@
                        :size polychord-panel-size
                        :items fields)
         vertpan (vertical-panel :id :polychord
-                                :items [pan mode-button play-button sizer-bar saver loader])
+                                :items [pan mode-button play-button tonic-bar
+                                        sizer-bar saver loader])
         f (frame :title (s/join ["Polychord " (str id)])
                  :id (s/join ["poly-" (str id)])
                  :content vertpan)]
@@ -1036,7 +1053,7 @@
                                      :listen [:action melody-chooser])
                            ])))
 
-;(config! control-frame :on-close :exit)
+(config! control-frame :on-close :exit)
 
 (defn -main [& args]
   (-> control-frame pack! show!)
