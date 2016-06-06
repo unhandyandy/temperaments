@@ -9,6 +9,8 @@
             [clojure.string :as s])
   (:gen-class))
 
+(load-file "src/temperaments/smart_sort.clj")
+
 (native!)
 
 (def tonic (atom :a3))
@@ -55,8 +57,9 @@
   (let [tonic-note (o/note @tonic)
         tonic-freq (o/midi->hz tonic-note)
         diff (- n tonic-note)
-        octave (quot diff 12)
-        octave (if (< diff 0) (- octave 1) octave)
+        octave (if (< diff 0)
+                 (dec (quot (inc diff) 12))
+                 (quot diff 12))
         interval (mod diff 12)]
     (* tonic-freq (Math/pow 2 octave) (nth (get @tuning-map @tuning) interval))))
 
@@ -359,7 +362,7 @@
                  :editable? true)]
     cb))
 
-(def panel-size [240 :by 500])
+(def panel-size [300 :by 620])
 (defn get-panel-size []
   [(first panel-size) (last panel-size)])
 
@@ -368,8 +371,8 @@
   (let [[w h] (get-panel-size)
         mel-hours (get (get @melody-map id) :pitches)
         mel-angle (/ (* 2 (Math/PI)) mel-hours)
-        radius (* w 0.3)
-        [xc yc] [(/ w 2) (* h 0.2)]
+        radius (* w 0.4)
+        [xc yc] [(/ w 2) (* h 0.25)]
         [wb hb] [50 20]]
     (map (fn [n]
            (let [angle (+ (/ Math/PI -2) (* n mel-angle))
@@ -387,8 +390,8 @@
   (let [[w h] (get-panel-size)
         rhy-hours (get (get @melody-map id) :beats)
         rhy-angle (/ (* 2 (Math/PI)) rhy-hours)
-        radius (* w 0.3)
-        [xc yc] [(/ w 2) (* h 0.6)]
+        radius (* w 0.4)
+        [xc yc] [(/ w 2) (* h 0.75)]
         [wb hb] [50 20]]
     (map (fn [n]
            (let [angle (+ (/ Math/PI -2) (* n rhy-angle))
@@ -403,13 +406,13 @@
              cb))
          (range rhy-hours))))
 
-(def polychord-panel-size [240 :by 240])
+(def polychord-panel-size [300 :by 300])
   
 ;; make chord keyboard for xyz-panel 
 (defn make-ratio-circle [id hours]
   (let [[w & {h :by}] polychord-panel-size
         angle (/ (* 2 (Math/PI)) hours)
-        radius (* w 0.3)
+        radius (* w 0.4)
         [xc yc] [(/ w 2) (/ h 2)]
         [wb hb] [70 20]]
     (map (fn [n]
@@ -565,7 +568,7 @@
          root (get-in @melody-map [id :root])
          panel (select root [:#kb])
          circhash (atom {})]
-                                        ;(println idlist)
+     ;(println idlist)
      (doseq [k idlist]
        (let [w (select panel [k])]
          (swap! circhash assoc k (value w))
@@ -681,11 +684,12 @@
      (map midi->str newnotes))))
 
 (defn transform-dict [dict trans]
-  (let [kws (keys dict)
-        oldvals (vals dict)
+  (let [sorted (sort-by key compare-keywords dict)
+        kws (keys sorted)
+        oldvals (vals sorted)
         newvals (trans oldvals)
         pairs (map #(vector %1 %2) kws newvals)]
-    (into {} pairs)))    
+    (into {} pairs)))
     
 (defn transform-necklace [trans id typekw]
   (let [panel (id->panel id)
@@ -716,28 +720,32 @@
   (let [reflect-button (button :text "Invert!"
                                :listen [:action
                                         (fn [e]
+                                          (let [center (+ (o/note @tonic) 3.5)
+                                                center (if (> center 66)
+                                                         (- center 12)
+                                                         center)]
                                           (transform-necklace
-                                           (invert-names (+ (o/note @tonic) 3.5))
-                                           id :pitches))])
+                                           (invert-names center)
+                                           id :pitches)))])
         translabel (label "Transpose: ")
         transbox (combobox :model (range -6 7)
-                           :id (keyword (s/join ["kb-" id "-mel-transpose"]))
-                           :listen [:action (fn [e]
-                                           (transform-necklace
-                                                   (transpose-names (get-e-val e))
-                                                   id :pitches))])]
-    (value! reflect-button 0)
+                           :id (keyword (s/join ["kb-" id "-mel-transpose"])))]
+    (.setSelectedItem transbox 0)
+    (config! transbox :listen [:action (fn [e]
+                                         (transform-necklace
+                                          (transpose-names (get-e-val e))
+                                          id :pitches))])
     (horizontal-panel :items [reflect-button translabel transbox])))
 
 ;;;;;;;;;;;;;; transforms end
 
 (defn make-panel-controls [id]
-  (let [cbp (combobox :model (range 1 10)
+  (let [cbp (combobox :model (range 1 13)
                       :id (keyword (s/join ["kb-" (str id) "-numpitch"]))
                       :listen [:action
                                (fn [e]
                                  (change-circle-mel id (value (.getSource e))))])
-        cbb (combobox :model (range 1 10)
+        cbb (combobox :model (range 1 13)
                       :id (keyword (s/join ["kb-" (str id) "-numbeats"]))
                       :listen [:action
                                (fn [e]
@@ -847,7 +855,7 @@
                                                    (config! src :text "Off")
                                                    (config! src :text "On"))))])
         tonic-bar (horizontal-panel :items [tonic-label tonic-button])
-        circle-sizer (combobox :model (range 1 10)
+        circle-sizer (combobox :model (range 1 13)
                                :listen [:action
                                         (fn [e]
                                           (let [butt (.getSource e)
@@ -1053,9 +1061,8 @@
                                      :listen [:action melody-chooser])
                            ])))
 
-(config! control-frame :on-close :exit)
+;(config! control-frame :on-close :exit)
 
 (defn -main [& args]
   (-> control-frame pack! show!)
-  ;;(make-melody-canvas "test-canvas")
   )
