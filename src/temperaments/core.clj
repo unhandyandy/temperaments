@@ -1061,7 +1061,7 @@
                                      :listen [:action melody-chooser])
                            ])))
 
-;(config! control-frame :on-close :exit)
+(config! control-frame :on-close :exit)
 
 (defn -main [& args]
   (-> control-frame pack! show!)
