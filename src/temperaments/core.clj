@@ -6,10 +6,9 @@
         seesaw.chooser
         clojure.math.numeric-tower)
   (:require [overtone.core :as o]
-            [clojure.string :as s])
+            [clojure.string :as s]
+            [eu.algoholic.smart_sort :as ss])
   (:gen-class))
-
-(load-file "src/temperaments/smart_sort.clj")
 
 (native!)
 
@@ -684,7 +683,7 @@
      (map midi->str newnotes))))
 
 (defn transform-dict [dict trans]
-  (let [sorted (sort-by key compare-keywords dict)
+  (let [sorted (sort-by key ss/compare-keywords dict)
         kws (keys sorted)
         oldvals (vals sorted)
         newvals (trans oldvals)
@@ -1061,7 +1060,8 @@
                                      :listen [:action melody-chooser])
                            ])))
 
-(config! control-frame :on-close :exit)
+(if *command-line-args*
+  (config! control-frame :on-close :exit))
 
 (defn -main [& args]
   (-> control-frame pack! show!)
