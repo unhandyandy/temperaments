@@ -1,6 +1,6 @@
 (ns temperaments.midiplayer
   (:use overtone.core
-        temperaments.core
+        ;temperaments.core
         temperaments.midifile)
   (:import [temperaments.midifile Event Note Song Controller])
   (:gen-class))
@@ -23,6 +23,7 @@
      )})
 
 (def midi->freq)
+(def flute)
 
 (extend Note
   Playable
