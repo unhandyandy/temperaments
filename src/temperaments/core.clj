@@ -894,9 +894,9 @@
     (value! circle-sizer 2)
     (-> f pack! show!)))
                                      
-(defn new-mono [e]
-  (swap! counter inc)
-  (make-mono-panel @counter))
+;; (defn new-mono [e]
+;;   (swap! counter inc)
+;;   (make-mono-panel @counter))
 
 (defn new-poly [e]
   (swap! counter inc)
@@ -1040,7 +1040,7 @@
                            (button :id :newPanel
                                    :text "New Panel"
                                    :listen [:action new-panel])
-                           (button :id :monoChord
+                           (button :id :polyChord
                                    :text "Polychord"
                                    :listen [:action new-poly])
                            (button :id :saveButt
