@@ -4,7 +4,8 @@
         ;seesaw.color
         ;seesaw.keystroke
         seesaw.chooser
-        clojure.math.numeric-tower)
+        clojure.math.numeric-tower
+        temperaments.tuning)
   (:require [overtone.core :as o]
             [temperaments.midifile :as mf]
             [temperaments.midiplayer :as mp]
@@ -13,54 +14,6 @@
   (:gen-class))
 
 (native!)
-
-(def tonic (atom :a3))
-
-(def tempo (atom 120))
-
-(def repetition (atom false))
-
-(def twelfth6 (sqrt 2))
-(def twelfth3 (sqrt twelfth6))
-(def twelfth1  (expt twelfth3 1/3))
-(def twelfth4 (expt 2 1/3))
-(def twelfth5 (* twelfth1 twelfth4))
-(def twelfth2 (* twelfth1 twelfth1))
-(def twelfth7 (* twelfth3 twelfth4))
-
-(def equal-temperament (map #(Math/pow 2 (/ % 12)) (range 0 12)))
-(def pythagorean '(1 256/243 9/8 32/27 81/64 4/3 729/512 3/2 128/81 27/16 16/9 243/128))
-(def just-intonation '(1 16/15 9/8 6/5 5/4 4/3 45/32 3/2 8/5 5/3 9/5 15/8))
-(def odonnel (list 1,(* 8/9 twelfth3),
-                        (* 8/9 twelfth4),(* 8/9 twelfth5),
-                        (* 8/9 twelfth6),
-                        4/3,(* 8/9 twelfth4 twelfth4),
-                        (* 4/3 twelfth2),(* 8/9 twelfth6 twelfth4),
-                        (* 32/27 twelfth6),(* twelfth6 twelfth4),
-                        (* 32/27 twelfth4 twelfth4)))
-(def neidhardt (list 1,(* 8/9 twelfth3),
-                        (* 8/9 twelfth4),(* 8/9 twelfth5),
-                        (* 8/9 twelfth6),
-                        4/3,(* 8/9 twelfth4 twelfth4),
-                        (* 4/3 twelfth2),(* 8/9 twelfth6 twelfth4),
-                        (* 32/27 twelfth6),(* 9/8 twelfth4 twelfth4),
-                        (* 32/27 twelfth4 twelfth4)))
-
-(def tuning (atom equal-temperament))
-
-(def counter (atom 0))
-
-(def melody-map (atom {}))
-
-(defn midi->freq [n]
-  (let [tonic-note (o/note @tonic)
-        tonic-freq (o/midi->hz tonic-note)
-        diff (- n tonic-note)
-        octave (if (< diff 0)
-                 (dec (quot (inc diff) 12))
-                 (quot diff 12))
-        interval (mod diff 12)]
-    (* tonic-freq (Math/pow 2 octave) (nth @tuning interval))))
 
 ;; (if (not (o/server-connected?))
 ;;   ;(o/boot-external-server 57110)
@@ -98,6 +51,24 @@
         sig (o/distort (* env (o/sin-osc freq)))
         sig (* amp sig ;mod2 mod3
                )]
+    sig))
+
+(o/definst clavier [freq 880
+                       amp 0.5
+                       attack 0.01
+                       decay 0.2
+                       sustain 0.3
+                       release 0.5
+                       gate 1
+                       out 0]
+  (let [env  (o/env-gen (o/adsr attack decay sustain release) gate :action o/FREE)
+        harms (map #(* % freq) (range 1 12))
+        harms (filter #(< % 20000) harms)
+        num (count harms)
+                                        ;strengths (map #(/ 1 %) (range 1 (inc num)))
+        strengths '(1 0.7 0.30 0.35 0.25 0.11 0.13 0.09 0.04 0.05 0.025)
+        siglist (map #(* %2 (o/sin-osc %1)) harms strengths)
+        sig (* env amp (apply + siglist))]
     sig))
 
 
@@ -166,10 +137,10 @@
         filt       (o/moog-ff (+ s1 s2) (* cutoff f-env) 3)]
     (* amp filt)))
 
-(def instruments ["Flute" ;"Piano"
+(def instruments ["Flute" "Clavier" ;"Piano"
                   "Mooger" "CS80" "SSaw" "Ticker" "Ping"])
 
-(def inst-cur flute)
+(reset! inst-cur flute)
 
 (defn kill-tones [e]
   (o/clear))
@@ -188,18 +159,19 @@
 (defn str->instr [str]
   (case str
     "Flute"   flute,
+    "Clavier" clavier,
     ;"Piano"   piano,
     "Mooger"  mooger,
     "CS80"    cs80,
     "SSaw"    ssaw,
     "Ticker"  tick,
     "Ping"    ping,
-    "Default" inst-cur))
+    "Default" @inst-cur))
 
 (defn inst-chooser [e]
   (let [val (value (.getSource e))
         instr (str->instr val)]
-    (def inst-cur instr)))
+    (reset! inst-cur instr)))
 
 (defn inst-chooser-part [id e]
   (let [val (value (.getSource e))
@@ -1003,6 +975,8 @@
         (doseq [[t r] (map vector fields dump)]
           (value! t r))
         (config! panel :items fields)))))
+
+(def control-frame)
 
 (defn install-tuning [e]
   (let [ratios (get-ratios e)

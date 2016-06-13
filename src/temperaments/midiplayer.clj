@@ -1,6 +1,6 @@
 (ns temperaments.midiplayer
   (:use overtone.core
-        ;temperaments.core
+        temperaments.tuning
         temperaments.midifile)
   (:import [temperaments.midifile Event Note Song Controller])
   (:gen-class))
@@ -16,29 +16,26 @@
 (defprotocol Playable
   (play-event [this time-info inst track-volume] "Plays event."))
 
-(extend Event
+(extend temperaments.midifile.Event
   Playable
   {:play-event
    (fn [this time-info inst track-volume]
      )})
 
-(def midi->freq)
-(def flute)
-
-(extend Note
+(extend temperaments.midifile.Note
   Playable
   {:play-event
    (fn [this time-info inst track-volume]
      (letfn [(duration-ms [duration-ticks] (/ (* (:msecs-per-tick time-info) duration-ticks) 1000))
              (volume [note track-volume]
-                     (* track-volume
-                        (/ (float (:velocity note)) 127.0)))]
+               (* track-volume
+                  (/ (float (:velocity note)) 127.0)))]
        (let [id (at (:t time-info) (inst :freq (midi->freq (:midi-note this))
-                                         ;:dur (duration-ms (:duration this))
+                                        ;:dur (duration-ms (:duration this))
                                          :vol (volume this track-volume)))]
-       (at (+ (:t time-info) (duration-ms (:duration this))) (ctl id :gate 0)))))})
+         (at (+ (:t time-info) (duration-ms (:duration this))) (ctl id :gate 0)))))})
 
-(extend Controller
+(extend temperaments.midifile.Controller
   Playable
   {:play-event
    (fn [this time-info inst track-volume]
@@ -61,7 +58,7 @@
 
 (defn play-track
   [start-ms msecs-per-tick track volume]
-  (let [inst flute]
+  (let [inst @inst-cur]
     (dorun (map #(let [ti (->TimeInfo start-ms msecs-per-tick (abs-time-ms start-ms msecs-per-tick (:tick %)))]
                    (apply-at (:t ti) #'play-event % ti inst volume nil))
                 (:events track)))))
