@@ -5,7 +5,8 @@
         ;seesaw.keystroke
         seesaw.chooser
         clojure.math.numeric-tower
-        temperaments.tuning)
+        temperaments.tuning
+        overtone.studio.inst)
   (:require [overtone.core :as o]
             [temperaments.midifile :as mf]
             [temperaments.midiplayer :as mp]
@@ -54,14 +55,15 @@
     sig))
 
 (o/definst clavier [freq 880
-                       amp 0.5
-                       attack 0.01
-                       decay 0.2
-                       sustain 0.3
-                       release 0.5
-                       gate 1
-                       out 0]
-  (let [env  (o/env-gen (o/adsr attack decay sustain release) gate :action o/FREE)
+                    amp 0.5
+                    attack 0.01
+                    decay 0.2
+                    sustain 0.3
+                    release 0.5
+                    gate 1
+                    out 0]
+  (let [env  (o/env-gen (o/adsr attack decay sustain release)
+                        gate :action o/FREE)
         harms (map #(* % freq) (range 1 12))
         harms (filter #(< % 20000) harms)
         num (count harms)
@@ -1058,8 +1060,9 @@
                                      :listen [:action melody-chooser])
                            ])))
 
-(if *command-line-args*
-  (config! control-frame :on-close :exit))
+;(if *command-line-args*
+(config! control-frame :on-close :exit)
+;)
 
 (defn -main [& args]
   (-> control-frame pack! show!)

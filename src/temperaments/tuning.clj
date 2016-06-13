@@ -1,6 +1,7 @@
 (ns temperaments.tuning
   (:use clojure.math.numeric-tower
-        temperaments.core)
+        ;temperaments.core
+        )
   (:require [overtone.core :as o])
   (:gen-class))
 
