@@ -5,8 +5,7 @@
         ;seesaw.keystroke
         seesaw.chooser
         clojure.math.numeric-tower
-        temperaments.tuning
-        overtone.studio.inst)
+        temperaments.tuning)
   (:require [overtone.core :as o]
             [temperaments.midifile :as mf]
             [temperaments.midiplayer :as mp]
@@ -47,8 +46,8 @@
                        gate 1
                        out 0]
   (let [env  (o/env-gen (o/adsr attack decay sustain release) gate :action o/FREE)
-        mod2 (o/lin-lin:kr (o/lf-noise2:kr 1) -1 1 0.2 1)
-        mod3 (o/lin-lin:kr (o/sin-osc:kr (o/ranged-rand 4 6)) -1 1 0.5 1)
+        ;mod2 (o/lin-lin:kr (o/lf-noise2:kr 1) -1 1 0.2 1)
+        ;mod3 (o/lin-lin:kr (o/sin-osc:kr (o/ranged-rand 4 6)) -1 1 0.5 1)
         sig (o/distort (* env (o/sin-osc freq)))
         sig (* amp sig ;mod2 mod3
                )]
@@ -64,13 +63,14 @@
                     out 0]
   (let [env  (o/env-gen (o/adsr attack decay sustain release)
                         gate :action o/FREE)
+        expdecay (o/lin-exp:kr (o/line:kr 0 120 120) 0 30 1 0.5)
         harms (map #(* % freq) (range 1 12))
         harms (filterv #(< % 20000) harms)
         num (count harms)
                                         ;strengths (map #(/ 1 %) (range 1 (inc num)))
         strengths [1 0.7 0.30 0.35 0.25 0.11 0.13 0.09 0.04 0.05 0.025]
         siglist (map #(* %2 (o/sin-osc %1)) harms strengths)
-        sig (* env amp (apply + siglist))]
+        sig (* expdecay env amp (apply + siglist))]
     sig))
 
 
@@ -290,8 +290,14 @@
       "Patterns"      (reset! melody false)
       "Midi File"     (reset! melody (let [loadfile (choose-file :type :open)]
                                        (if loadfile
-                                         (let [path (.getPath loadfile)]
-                                           (mf/song-from-file path))
+                                         (try
+                                           (let [path (.getPath loadfile)]
+                                             (mf/song-from-file path))
+                                           (catch Exception e
+                                             (alert
+                                              (str "caught exception: " (.getMessage e))
+                                              :type :error)
+                                             @melody))
                                          @melody)))
       )))
 
