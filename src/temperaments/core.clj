@@ -1063,7 +1063,7 @@
                            ])))
 
 ;(if *command-line-args*
-;(config! control-frame :on-close :exit)
+(config! control-frame :on-close :exit)
 ;)
 
 (defn -main [& args]
