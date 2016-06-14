@@ -65,10 +65,10 @@
   (let [env  (o/env-gen (o/adsr attack decay sustain release)
                         gate :action o/FREE)
         harms (map #(* % freq) (range 1 12))
-        harms (filter #(< % 20000) harms)
+        harms (filterv #(< % 20000) harms)
         num (count harms)
                                         ;strengths (map #(/ 1 %) (range 1 (inc num)))
-        strengths '(1 0.7 0.30 0.35 0.25 0.11 0.13 0.09 0.04 0.05 0.025)
+        strengths [1 0.7 0.30 0.35 0.25 0.11 0.13 0.09 0.04 0.05 0.025]
         siglist (map #(* %2 (o/sin-osc %1)) harms strengths)
         sig (* env amp (apply + siglist))]
     sig))
@@ -110,7 +110,7 @@
 ;;                                         ;(o/detect-silence snd 0.05 :action o/FREE)
 ;;     snd))
 
-;; modified from repo to take freq rather than note
+;;modified from repo to take freq rather than note
 (o/definst mooger
   "Choose 0, 1, or 2 for saw, sin, or pulse"
   [freq 220
@@ -139,8 +139,10 @@
         filt       (o/moog-ff (+ s1 s2) (* cutoff f-env) 3)]
     (* amp filt)))
 
-(def instruments ["Flute" "Clavier" ;"Piano"
-                  "Mooger" "CS80" "SSaw" "Ticker" "Ping"])
+(def instruments ["Flute"
+                  "Clavier" ;"Piano"
+                  "Mooger" "CS80" "SSaw" "Ticker" "Ping"
+                  ])
 
 (reset! inst-cur flute)
 
@@ -1061,7 +1063,7 @@
                            ])))
 
 ;(if *command-line-args*
-(config! control-frame :on-close :exit)
+;(config! control-frame :on-close :exit)
 ;)
 
 (defn -main [& args]

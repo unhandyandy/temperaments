@@ -16,26 +16,26 @@
 (defprotocol Playable
   (play-event [this time-info inst track-volume] "Plays event."))
 
-(extend temperaments.midifile.Event
+(extend Event
   Playable
   {:play-event
    (fn [this time-info inst track-volume]
      )})
 
-(extend temperaments.midifile.Note
+(extend Note
   Playable
   {:play-event
    (fn [this time-info inst track-volume]
-     (letfn [(duration-ms [duration-ticks] (/ (* (:msecs-per-tick time-info) duration-ticks) 1000))
+     (letfn [(duration-ms [duration-ticks] (* (:msecs-per-tick time-info) duration-ticks))
              (volume [note track-volume]
                (* track-volume
                   (/ (float (:velocity note)) 127.0)))]
        (let [id (at (:t time-info) (inst :freq (midi->freq (:midi-note this))
                                         ;:dur (duration-ms (:duration this))
-                                         :vol (volume this track-volume)))]
+                                         :amp (volume this track-volume)))]
          (at (+ (:t time-info) (duration-ms (:duration this))) (ctl id :gate 0)))))})
 
-(extend temperaments.midifile.Controller
+(extend Controller
   Playable
   {:play-event
    (fn [this time-info inst track-volume]
