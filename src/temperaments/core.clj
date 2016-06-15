@@ -941,7 +941,7 @@
 (def tempo-slider
   (slider :orientation :horizontal
           ;:value 120
-          :min 20
+          :min 0
           :max 360
           :snap-to-ticks? false
           :paint-labels? true
@@ -999,7 +999,9 @@
 (listen tempo-slider
         :change
         (fn [e]
-          (reset! tempo (value tempo-slider))))
+          (let [newval (value tempo-slider)
+                newval (if (= 0 newval) 1 newval)]
+            (reset! tempo newval))))
 
 (value! tempo-slider 120)
 
