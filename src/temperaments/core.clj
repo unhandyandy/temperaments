@@ -4,63 +4,16 @@
         ;seesaw.color
         ;seesaw.keystroke
         seesaw.chooser
-        clojure.math.numeric-tower)
+        clojure.math.numeric-tower
+        temperaments.tuning)
   (:require [overtone.core :as o]
+            [temperaments.midifile :as mf]
+            [temperaments.midiplayer :as mp]
             [clojure.string :as s]
             [eu.algoholic.smart_sort :as ss])
   (:gen-class))
 
 (native!)
-
-(def tonic (atom :a3))
-
-(def tuning (atom :equalTemperament))
-
-(def tempo (atom 120))
-
-(def repetition (atom false))
-
-(def twelfth6 (sqrt 2))
-(def twelfth3 (sqrt twelfth6))
-(def twelfth1  (expt twelfth3 1/3))
-(def twelfth4 (expt 2 1/3))
-(def twelfth5 (* twelfth1 twelfth4))
-(def twelfth2 (* twelfth1 twelfth1))
-(def twelfth7 (* twelfth3 twelfth4))
-
-(def tuning-map
-  (atom {:equalTemperament (map #(Math/pow 2 (/ % 12)) (range 0 12)),
-         :pythagorean '(1 256/243 9/8 32/27 81/64 4/3 729/512 3/2 128/81 27/16 16/9 243/128),
-         :justIntonation '(1 16/15 9/8 6/5 5/4 4/3 45/32 3/2 8/5 5/3 9/5 15/8)
-         :odonnel (list 1,(* 8/9 twelfth3),
-                        (* 8/9 twelfth4),(* 8/9 twelfth5),
-                        (* 8/9 twelfth6),
-                        4/3,(* 8/9 twelfth4 twelfth4),
-                        (* 4/3 twelfth2),(* 8/9 twelfth6 twelfth4),
-                        (* 32/27 twelfth6),(* twelfth6 twelfth4),
-                        (* 32/27 twelfth4 twelfth4))
-         :neidhardt (list 1,(* 8/9 twelfth3),
-                        (* 8/9 twelfth4),(* 8/9 twelfth5),
-                        (* 8/9 twelfth6),
-                        4/3,(* 8/9 twelfth4 twelfth4),
-                        (* 4/3 twelfth2),(* 8/9 twelfth6 twelfth4),
-                        (* 32/27 twelfth6),(* 9/8 twelfth4 twelfth4),
-                        (* 32/27 twelfth4 twelfth4))
-         }))
-
-(def counter (atom 0))
-
-(def melody-map (atom {}))
-
-(defn midi->freq [n]
-  (let [tonic-note (o/note @tonic)
-        tonic-freq (o/midi->hz tonic-note)
-        diff (- n tonic-note)
-        octave (if (< diff 0)
-                 (dec (quot (inc diff) 12))
-                 (quot diff 12))
-        interval (mod diff 12)]
-    (* tonic-freq (Math/pow 2 octave) (nth (get @tuning-map @tuning) interval))))
 
 ;; (if (not (o/server-connected?))
 ;;   ;(o/boot-external-server 57110)
@@ -71,7 +24,10 @@
                        :value 57110)
         port (read-string portstr)]
     (o/connect-external-server port)
-  ))
+    ))
+
+;; (load "midifile")
+;; (load "midi_player")
 
 (require '[overtone.inst.synth :as syn])
 
@@ -90,10 +46,31 @@
                        gate 1
                        out 0]
   (let [env  (o/env-gen (o/adsr attack decay sustain release) gate :action o/FREE)
-        mod2 (o/lin-lin:kr (o/lf-noise2:kr 1) -1 1 0.2 1)
-        mod3 (o/lin-lin:kr (o/sin-osc:kr (o/ranged-rand 4 6)) -1 1 0.5 1)
+        ;mod2 (o/lin-lin:kr (o/lf-noise2:kr 1) -1 1 0.2 1)
+        ;mod3 (o/lin-lin:kr (o/sin-osc:kr (o/ranged-rand 4 6)) -1 1 0.5 1)
         sig (o/distort (* env (o/sin-osc freq)))
-        sig (* amp sig mod2 mod3)]
+        sig (* amp sig ;mod2 mod3
+               )]
+    sig))
+
+(o/definst clavier [freq 880
+                    amp 0.5
+                    attack 0.01
+                    decay 0.2
+                    sustain 0.3
+                    release 0.5
+                    gate 1
+                    out 0]
+  (let [env  (o/env-gen (o/adsr attack decay sustain release)
+                        gate :action o/FREE)
+        expdecay (o/lin-exp:kr (o/line:kr 0 120 120) 0 30 1 0.5)
+        harms (map #(* % freq) (range 1 12))
+        harms (filterv #(< % 20000) harms)
+        num (count harms)
+                                        ;strengths (map #(/ 1 %) (range 1 (inc num)))
+        strengths [1 0.7 0.30 0.35 0.25 0.11 0.13 0.09 0.04 0.05 0.025]
+        siglist (map #(* %2 (o/sin-osc %1)) harms strengths)
+        sig (* expdecay env amp (apply + siglist))]
     sig))
 
 
@@ -133,7 +110,7 @@
 ;;                                         ;(o/detect-silence snd 0.05 :action o/FREE)
 ;;     snd))
 
-;; modified from repo to take freq rather than note
+;;modified from repo to take freq rather than note
 (o/definst mooger
   "Choose 0, 1, or 2 for saw, sin, or pulse"
   [freq 220
@@ -162,10 +139,12 @@
         filt       (o/moog-ff (+ s1 s2) (* cutoff f-env) 3)]
     (* amp filt)))
 
-(def instruments ["Flute" ;"Piano"
-                  "Mooger" "CS80" "SSaw" "Ticker" "Ping"])
+(def instruments ["Flute"
+                  "Clavier" ;"Piano"
+                  "Mooger" "CS80" "SSaw" "Ticker" "Ping"
+                  ])
 
-(def inst-cur flute)
+(reset! inst-cur flute)
 
 (defn kill-tones [e]
   (o/clear))
@@ -184,18 +163,19 @@
 (defn str->instr [str]
   (case str
     "Flute"   flute,
+    "Clavier" clavier,
     ;"Piano"   piano,
     "Mooger"  mooger,
     "CS80"    cs80,
     "SSaw"    ssaw,
     "Ticker"  tick,
     "Ping"    ping,
-    "Default" inst-cur))
+    "Default" @inst-cur))
 
 (defn inst-chooser [e]
   (let [val (value (.getSource e))
         instr (str->instr val)]
-    (def inst-cur instr)))
+    (reset! inst-cur instr)))
 
 (defn inst-chooser-part [id e]
   (let [val (value (.getSource e))
@@ -260,11 +240,12 @@
 (defn tuning-chooser [e]
   (let [val (value (.getSource e))]
     (case val
-      "Equal"       (reset! tuning :equalTemperament)
-      "Pythagorean" (reset! tuning :pythagorean)
-      "Just"        (reset! tuning :justIntonation)
-      "O'Donnel"        (reset! tuning :odonnel)
-      "Neidhardt"        (reset! tuning :neidhardt)))
+      "Equal"       (reset! tuning equal-temperament)
+      "Pythagorean" (reset! tuning pythagorean)
+      "Just"        (reset! tuning just-intonation)
+      "O'Donnel"    (reset! tuning odonnel)
+      "Neidhardt"   (reset! tuning neidhardt)
+      "Custom"      nil ))
   ;;(println (midi->freq 60))
   )
 
@@ -298,6 +279,7 @@
     '()))
 
 (def melody (atom [(cons "Default" (note-to-midi major))]))
+(def midi-file (atom false))
 
 (defn melody-chooser [e]
   (let [val (value (.getSource e))]
@@ -306,6 +288,17 @@
       "Major Scale"   (reset! melody [(cons "Default" (note-to-midi major))])
       "Minor Scale"   (reset! melody [(cons "Default" (note-to-midi minor))])
       "Patterns"      (reset! melody false)
+      "Midi File"     (reset! melody (let [loadfile (choose-file :type :open)]
+                                       (if loadfile
+                                         (try
+                                           (let [path (.getPath loadfile)]
+                                             (mf/song-from-file path))
+                                           (catch Exception e
+                                             (alert
+                                              (str "caught exception: " (.getMessage e))
+                                              :type :error)
+                                             @melody))
+                                         @melody)))
       )))
 
 ;Playing a Melody
@@ -515,14 +508,16 @@
        (play metro (str->instr instr) part {:midi midiq})))))
 
 (defn play-melody [e]
-  (let [[score len] (if @melody
-                      [@melody 20]
-                      (make-score))
-        metro (o/metronome @tempo)]
-    (doseq [[instr & part] score]
-      (play metro (str->instr instr) part {:midi true}))
-    (o/apply-at (metro len) #(if @repetition (play-melody nil)))
-    ))
+  (if (= (type @melody) temperaments.midifile.Song)
+    (mp/play-song @melody)
+    (let [[score len] (if @melody
+                        [@melody 20]
+                        (make-score))
+          metro (o/metronome @tempo)]
+      (doseq [[instr & part] score]
+        (play metro (str->instr instr) part {:midi true}))
+      (o/apply-at (metro len) #(if @repetition (play-melody nil)))
+      )))
   
 (defn play-solo [id e]
   (let [[mel rhy _ instr] (make-part id)
@@ -785,51 +780,52 @@
       f)))
 
 
-(defn make-mono-panel [id]
-  (let [prefix (s/join ["monochord-" (str id) "-"])
-        tonic-kw (keyword (s/join [prefix "tonic"]))
-        tonic-label (label "Tonic: ")
-        tonic-box (combobox :model keyboard)
-        tonic-bar (horizontal-panel :items [tonic-label tonic-box])
-        note-label (label "Ratio: ")
-        note-ratio (text :text "" :editable? true)
-        note-bar (horizontal-panel :items [note-label note-ratio])
-        mode-button (button :text "Seq."
-                            :listen [:action (fn [e]
-                                               (let [src (.getSource e)
-                                                     curval (config src :text)]
-                                                 (if (= curval "Seq.")
-                                                   (config! src :text "Chord")
-                                                   (config! src :text "Seq."))))])
-        play-button (button :text "Play"
-                            :listen [:action
-                                     (fn [e]
-                                       (let [ton (str->midi (value tonic-box))
-                                             tonfreq (midi->freq ton)
-                                             ratiostr (value note-ratio)
-                                             ratio (read-string ratiostr)
-                                             notefreq (* tonfreq ratio)
-                                             tonvec [tonfreq 1]
-                                             notevec [notefreq 1]
-                                             simul (= "Chord"
-                                                      (config mode-button :text))
-                                             score (if simul
-                                                     [["Default" tonvec]
-                                                      ["Default" notevec]]
-                                                     [["Default" tonvec
-                                                       notevec]])
-                                             metro (o/metronome @tempo)]
-                                         (play-score score false)))])
-        pan (vertical-panel :id :monochord
-                            :size [160 :by 105]
-                            :items [tonic-bar note-bar mode-button play-button])
-        f (frame :title (s/join ["Monochord " (str id)])
-                 :id (s/join ["mono-" (str id)])
-                 :content pan)]
-    (-> f pack! show!)))
+;; (defn make-mono-panel [id]
+;;   (let [prefix (s/join ["monochord-" (str id) "-"])
+;;         tonic-kw (keyword (s/join [prefix "tonic"]))
+;;         tonic-label (label "Tonic: ")
+;;         tonic-box (combobox :model keyboard)
+;;         tonic-bar (horizontal-panel :items [tonic-label tonic-box])
+;;         note-label (label "Ratio: ")
+;;         note-ratio (text :text "" :editable? true)
+;;         note-bar (horizontal-panel :items [note-label note-ratio])
+;;         mode-button (button :text "Seq."
+;;                             :listen [:action (fn [e]
+;;                                                (let [src (.getSource e)
+;;                                                      curval (config src :text)]
+;;                                                  (if (= curval "Seq.")
+;;                                                    (config! src :text "Chord")
+;;                                                    (config! src :text "Seq."))))])
+;;         play-button (button :text "Play"
+;;                             :listen [:action
+;;                                      (fn [e]
+;;                                        (let [ton (str->midi (value tonic-box))
+;;                                              tonfreq (midi->freq ton)
+;;                                              ratiostr (value note-ratio)
+;;                                              ratio (read-string ratiostr)
+;;                                              notefreq (* tonfreq ratio)
+;;                                              tonvec [tonfreq 1]
+;;                                              notevec [notefreq 1]
+;;                                              simul (= "Chord"
+;;                                                       (config mode-button :text))
+;;                                              score (if simul
+;;                                                      [["Default" tonvec]
+;;                                                       ["Default" notevec]]
+;;                                                      [["Default" tonvec
+;;                                                        notevec]])
+;;                                              metro (o/metronome @tempo)]
+;;                                          (play-score score false)))])
+;;         pan (vertical-panel :id :monochord
+;;                             :size [160 :by 105]
+;;                             :items [tonic-bar note-bar mode-button play-button])
+;;         f (frame :title (s/join ["Monochord " (str id)])
+;;                  :id (s/join ["mono-" (str id)])
+;;                  :content pan)]
+;;     (-> f pack! show!)))
 
 (def save-polychord)
 (def load-polychord)
+(def install-tuning)
 
 (defn make-poly-panel [id]
   (let [prefix (s/join ["polychord-" (str id) "-"])
@@ -864,23 +860,25 @@
         saver (button :text "Save"
                       :listen [:action save-polychord])
         loader (button :text "Load"
-                      :listen [:action load-polychord])
+                       :listen [:action load-polychord])
+        installer (button :text "Install"
+                          :listen [:action install-tuning])
         fields (make-ratio-circle id 2)
         pan (xyz-panel :id :ratios
                        :size polychord-panel-size
                        :items fields)
         vertpan (vertical-panel :id :polychord
                                 :items [pan mode-button play-button tonic-bar
-                                        sizer-bar saver loader])
+                                        sizer-bar saver loader installer])
         f (frame :title (s/join ["Polychord " (str id)])
                  :id (s/join ["poly-" (str id)])
                  :content vertpan)]
     (value! circle-sizer 2)
     (-> f pack! show!)))
                                      
-(defn new-mono [e]
-  (swap! counter inc)
-  (make-mono-panel @counter))
+;; (defn new-mono [e]
+;;   (swap! counter inc)
+;;   (make-mono-panel @counter))
 
 (defn new-poly [e]
   (swap! counter inc)
@@ -943,7 +941,7 @@
 (def tempo-slider
   (slider :orientation :horizontal
           ;:value 120
-          :min 20
+          :min 0
           :max 360
           :snap-to-ticks? false
           :paint-labels? true
@@ -988,12 +986,22 @@
           (value! t r))
         (config! panel :items fields)))))
 
+(def control-frame)
+
+(defn install-tuning [e]
+  (let [ratios (get-ratios e)
+        tuning-button (select control-frame [:#tuningChooser])]
+    (when (= (count ratios) 12)
+      (reset! tuning ratios)
+      (value! tuning-button "Custom"))))
 
 ;; handler for tempo-slider
 (listen tempo-slider
         :change
         (fn [e]
-          (reset! tempo (value tempo-slider))))
+          (let [newval (value tempo-slider)
+                newval (if (= 0 newval) 1 newval)]
+            (reset! tempo newval))))
 
 (value! tempo-slider 120)
 
@@ -1018,7 +1026,7 @@
                            (button :id :newPanel
                                    :text "New Panel"
                                    :listen [:action new-panel])
-                           (button :id :monoChord
+                           (button :id :polyChord
                                    :text "Polychord"
                                    :listen [:action new-poly])
                            (button :id :saveButt
@@ -1050,18 +1058,21 @@
                                      :listen [:action tonic-chooser])
                            (label "Tuning:")
                            (combobox :model ["Equal" "Pythagorean" "Just"
-                                             "O'Donnel" "Neidhardt"]
+                                             "O'Donnel" "Neidhardt"
+                                             "Custom"]
                                      :id :tuningChooser
                                      :listen [:action tuning-chooser])
                            (label "Melody:")
                            (combobox :model ["Major Scale" "Minor Scale"
-                                             "Art of Fugue" "Patterns"]
+                                             "Art of Fugue" "Patterns"
+                                             "Midi File"]
                                      :id :melodyChooser
                                      :listen [:action melody-chooser])
                            ])))
 
-(if *command-line-args*
-  (config! control-frame :on-close :exit))
+;(if *command-line-args*
+(config! control-frame :on-close :exit)
+;)
 
 (defn -main [& args]
   (-> control-frame pack! show!)
